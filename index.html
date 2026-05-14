@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>theDAO/log — Token Budget Allocator</title>
+<link rel="stylesheet" href="/brand.css" />
+<style>
+  /* Edge-to-edge: kill the browser-default 8px body margin and make the
+     dark brand background extend behind everything so any letterboxing
+     blends in instead of flashing white. */
+  html, body, #app {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--dao-blue-950, #0b1426);
+  }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    color: white;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>
