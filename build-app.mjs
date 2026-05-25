@@ -1075,9 +1075,17 @@ flow2 = flow2.replace(
                   </div>
                 </div>
               ) : (
-                <div key="clean" style={{ background: "rgba(92,183,90,0.10)", border: "1px solid rgba(92,183,90,0.40)", borderLeft: "4px solid var(--dao-green)", borderRadius: 10, padding: "16px 18px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "var(--dao-green)", letterSpacing: "-0.01em" }}>✓ Murmur on file</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                <div key="clean" style={{
+                  background: "linear-gradient(135deg, rgba(92,183,90,0.22) 0%, rgba(92,183,90,0.14) 100%), var(--surface-card)",
+                  border: "1px solid rgba(92,183,90,0.55)",
+                  borderLeft: "4px solid var(--dao-green)",
+                  borderRadius: 10,
+                  padding: "16px 18px",
+                  boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+                  animation: "f2statepop .18s ease-out",
+                }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "var(--dao-green)", letterSpacing: "-0.01em", textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}>✓ Murmur on file</div>
+                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 8, letterSpacing: "0.08em", textTransform: "uppercase", fontWeight: 600 }}>
                     Signed {_prettyLocalClose(_userBallot.signedAt)}
                   </div>
                 </div>

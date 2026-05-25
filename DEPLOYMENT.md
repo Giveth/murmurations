@@ -1,10 +1,17 @@
-# theDAO/log — Deployment Guide for Kay
+# Murmuration — Deployment Guide for Kay
 
-This is the operator's runbook for taking the dapp from the current
-testbed (Tailscale Funnel on a Windows machine) to production hosting
-under Giveth ownership. Pair this with `HANDOFF.md`, which covers the
-architecture and the verification model — this doc is the deploy-day
-walkthrough.
+This is the operator's runbook for taking the Murmuration dapp from
+the current testbed (Tailscale Funnel on a Windows machine) to
+production hosting under Giveth ownership. Pair this with
+`HANDOFF.md`, which covers the architecture, the verification model,
+and the brand/PFP system — this doc is the deploy-day walkthrough.
+
+> **What changed since the May 18 version of this doc:**
+> §1g (new) — switch the eligibility contract from BUIDLER (test) to the
+> production ETHSecurity Badge before launch.
+> §6 (updated) — pre-flight covers the 200 PFPs + favicon + OG card.
+> HANDOFF.md §11–§12 cover the design tokens + PFP/incognito system
+> in detail — read those first if you're new to the project.
 
 The recommended target is **Railway** (~$5–10/mo, hobby tier), but the
 checklist applies to Render or Fly.io with minor wording changes. The
@@ -172,6 +179,36 @@ Railway and most platforms look for `pnpm start` by convention.
 ```
 
 Same Node major across testbed and prod avoids surprises.
+
+### 1g. Swap eligibility contract from BUIDLER (test) → ETHSecurity Badge (prod)
+
+The testbed checks eligibility against the BUIDLER badge on Arbitrum
+(`0x32d664ca9ea4bad60b2b8ed61dec30692df43ac9`). For production, swap
+to the real ETHSecurity Badge on mainnet:
+
+| Field | Value |
+|---|---|
+| Contract | `0xf67c0ade41c607efebf198f9d6065ab1ec5ad4cd` |
+| Name | ETHSecurity Badge |
+| Symbol | BADGE |
+| Chain | Ethereum Mainnet (chainId 1) |
+| Holders | 200 (1:1 with the PFP set) |
+
+Two places to edit:
+
+**Frontend (token registry default):** the registry is hardcoded in
+`src/main.tsx`'s eligibility check + the `tok-buidler` entry threaded
+through F2App. Update the default token's `address` + `chain` to point
+at the ETHSecurity Badge.
+
+**Backend** (`server/api.mjs`): update `KNOWN_ELIGIBILITY_TOKENS` and
+`DEFAULT_ELIGIBILITY_TOKEN_ID` so the badge check on `POST /api/.../vote`
+queries the production contract on mainnet (not Arbitrum). Same diff
+shape; just swap the address + chain.
+
+After the swap, run `node scripts/build-pfp-mapping.mjs` once to
+freeze the 200-holder → PFP-index mapping (it scans the ETHSecurity
+contract's Transfer events). Commit `public/assets/pfp-mapping.json`.
 
 ---
 
@@ -386,10 +423,22 @@ Important things to grep for:
 
 ## 6. Sanity checklist before declaring done
 
-- [ ] Code changes from §1 merged and deployed.
+- [ ] Code changes from §1 (a–g) merged and deployed.
+- [ ] Eligibility contract swapped to ETHSecurity Badge (mainnet) —
+      §1g.
+- [ ] `public/assets/pfp-mapping.json` regenerated from the prod
+      contract (`node scripts/build-pfp-mapping.mjs`) and committed.
+- [ ] 200 PFPs present in `public/assets/pfps/` (`ls | wc -l` = 200).
+- [ ] `public/favicon.png` + `public/og-image.png` ship in `dist/`
+      after `pnpm build`.
+- [ ] OG / Twitter image URLs in `index.html` swapped from relative
+      (`/og-image.png`) to absolute
+      (`https://<prod-domain>/og-image.png`) so Twitter cards render.
 - [ ] Railway service is up at custom domain with valid SSL.
 - [ ] Wallet connect → sign → /api/.../vote returns 200, ballot
       visible in `/api/.../ballots`.
+- [ ] PFP appears in the header for the test wallet (matches the
+      mapping snapshot).
 - [ ] Pinata pin is logged for that test ballot (`[pinata] pinned`).
 - [ ] On-chain `commit` works end-to-end on a throwaway proposal:
       curl POST → tx hash → Verify panel shows green.
