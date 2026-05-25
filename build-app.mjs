@@ -28,7 +28,7 @@ import * as React from "react";
 import * as wagmi from "wagmi";
 import { verifyTypedData } from "viem";
 import * as votingApi from "./votingApi";
-const { useState, useMemo, useEffect, useRef } = React;
+const { useState, useMemo, useEffect, useRef, useReducer } = React;
 
 // Minimal ERC-721 balanceOf ABI used by F2Submit's eligibility filter.
 const _erc721BalanceOfAbi = [{
@@ -232,7 +232,7 @@ flow2 = flow2.replace(
 flow2 = flow2.replace(
   /<div style=\{\{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 \}\}>\n\s*<Field label=\{r\.voting === "quadratic" \? "Budget \(credits\)" : "Votes per holder"\}>\n\s*<input className="input font-mono" type="number" value=\{r\.budget\} onChange=\{e => set\("budget", Number\(e\.target\.value\)\)\} \/>\n\s*<\/Field>\n\s*<Field label="Submissions per holder">\n\s*<input className="input font-mono" type="number" value=\{r\.cap\} onChange=\{e => set\("cap", Number\(e\.target\.value\)\)\} \/>\n\s*<\/Field>\n\s*<\/div>/,
   `<div>
-            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Budget</label>
+            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Budget</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
               {[
                 { v: "token-based", t: "Token-based", d: "Voting power = each holder's token balance. No fixed budget." },
@@ -346,13 +346,17 @@ flow2 = flow2.replace(
   /(function F2App\(\{ role, address, onDisconnect, onConnectClick, tokens, setTokens \}\) \{\n\s*const \[screen, setScreen\] = useState\("rounds"\);)/,
   `$1
     const _hydrated = useRef(false);
+    // Public-facing state — used by render so screens can show skeletons
+    // while the initial /api/proposals fetch is in flight, instead of
+    // flashing "Round not found" for a fresh deep-link.
+    const [_hydrationDone, _setHydrationDone] = useState(false);
     useEffect(() => {
       if (_hydrated.current) return;
       _hydrated.current = true;
       (async () => {
         try {
           const fetched = await votingApi.fetchProposals();
-          if (!fetched || fetched.length === 0) return;
+          if (!fetched || fetched.length === 0) { _setHydrationDone(true); return; }
           const newRounds = [];
           for (const p of fetched) {
             for (const opt of (p.options || [])) {
@@ -400,6 +404,8 @@ flow2 = flow2.replace(
           });
         } catch (e) {
           console.error("[F2App] hydrate failed:", e);
+        } finally {
+          _setHydrationDone(true);
         }
       })();
     }, []);`,
@@ -417,6 +423,7 @@ flow2 = flow2.replace(
             role={role}
             tokens={tokens}
             address={address}
+            preselectRoundId={currentRound}
             setSaveToast={_setSaveToast}
             onSubmitted={(rid) => { setCurrentRound(rid); setScreen("round"); }}
           />`,
@@ -457,11 +464,56 @@ flow2 = flow2.replace(
                 _setSaveToast({ kind: "err", text: "Wallet not connected. Connect your wallet (top right) and try again." });
                 return;
               }
-              const opts = (saved.issueIds || []).map((id) => {
-                const iss = ISSUES.find((i) => i.id === id);
-                return { id, label: iss?.title || ("Issue " + id) };
-              });
+              // Server-authoritative option labels: when editing an
+              // existing proposal, fetch the live options from the API and
+              // pass those through. POST /api/proposals overwrites the
+              // whole record, so any option not in our payload — or with a
+              // bogus fallback label — would clobber the real one.
+              // (Earlier the fallback was "Issue " + id, which silently
+              // renamed every option whenever ISSUES wasn't hydrated. Real
+              // labels are now sourced from the server, not a local cache.)
+              let opts;
+              try {
+                const live = await votingApi.fetchProposal(saved.id).catch(() => null);
+                const liveOpts = (live && live.proposal && live.proposal.options) || null;
+                if (liveOpts && liveOpts.length > 0) {
+                  // Editing an existing vote — preserve server labels for
+                  // each id the editor still has, ignore ids the editor
+                  // doesn't recognize (admin deleted them in this session).
+                  const byId = new Map(liveOpts.map((o) => [o.id, o]));
+                  opts = (saved.issueIds || []).map((id) => {
+                    const fromServer = byId.get(id);
+                    if (fromServer) return { id, label: fromServer.label };
+                    // New option added in this session via ISSUES (rare)
+                    const iss = ISSUES.find((i) => i.id === id);
+                    return iss && iss.title ? { id, label: iss.title } : null;
+                  }).filter(Boolean);
+                } else {
+                  // First-publish flow (no server record yet) — rely on
+                  // ISSUES, but skip ids we can't resolve instead of
+                  // fabricating "Issue {id}" labels.
+                  opts = (saved.issueIds || []).map((id) => {
+                    const iss = ISSUES.find((i) => i.id === id);
+                    return iss && iss.title ? { id, label: iss.title } : null;
+                  }).filter(Boolean);
+                }
+              } catch (e) {
+                console.error("[options-resolve] failed:", e);
+                _setSaveToast({ kind: "err", text: "Couldn't resolve option labels — vote not saved. Try again." });
+                return;
+              }
               _setSaveToast({ kind: "ok", text: "Sign the create-vote action in your wallet…" });
+              // Rolling votes have no client-visible deadline, but the
+              // server (and bulk-hydrate's status derivation) only know
+              // about deadlines. Persist a far-future timestamp so the
+              // vote registers as "open" forever. Without this, ticking
+              // "Always open" while a closed deadline is still in r.closes
+              // would re-save the past date → bulk-hydrate sees expired
+              // → vote stays in past-votes after refresh.
+              const _ROLLING_DEADLINE = new Date(Date.now() + 100 * 365 * 86400 * 1000).toISOString();
+              const _effectiveDeadline = saved.rolling
+                ? _ROLLING_DEADLINE
+                : (saved.closes || new Date(Date.now() + 7 * 86400 * 1000).toISOString());
               try {
                 await votingApi.createProposal({
                   id: saved.id,
@@ -470,7 +522,7 @@ flow2 = flow2.replace(
                   votingMode: saved.voting === "quadratic" ? "quadratic" : "token-weight",
                   budget: Number(saved.budget) || 100,
                   options: opts,
-                  deadline: saved.closes || new Date(Date.now() + 7 * 86400 * 1000).toISOString(),
+                  deadline: _effectiveDeadline,
                   tokenId: saved.tokenId || null,
                 }, _walletClient, address);
                 // Only after server confirms: add to local state.
@@ -511,26 +563,48 @@ flow2 = flow2.replace(
   function (m) {
     return m.replace(
       /(<\/F2Chrome>)/,
-      `{_saveToast && (
-          <div
-            role="status"
-            onClick={() => _setSaveToast(null)}
-            style={{
-              position: "fixed", bottom: 24, right: 24, zIndex: 99999,
-              minWidth: 320, maxWidth: 460,
-              padding: "14px 18px", borderRadius: 12,
-              background: _saveToast.kind === "ok" ? "rgb(46,120,46)" : "rgb(180,40,40)",
-              color: "white", boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
-              fontSize: 13, lineHeight: 1.5, cursor: "pointer",
-              animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
-            }}
-          >
-            <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
-              {_saveToast.kind === "ok" ? "✓ Saved" : "✗ Save failed"}
+      `{_saveToast && (() => {
+          // Detect the vote-cast-success moment so the starling mascot can
+          // celebrate the "your wingbeat joins the flock" moment. We only
+          // show the bird when the user actually signed a ballot — not for
+          // routine confirmations or admin-side saves.
+          const _isVoteCast = _saveToast.kind === "ok" && /^Signed\\s/.test(_saveToast.text || "");
+          return (
+            <div
+              role="status"
+              onClick={() => _setSaveToast(null)}
+              style={{
+                position: "fixed", bottom: 24, right: 24, zIndex: 99999,
+                minWidth: _isVoteCast ? 380 : 320, maxWidth: 480,
+                padding: _isVoteCast ? "14px 18px 14px 14px" : "14px 18px",
+                borderRadius: 12,
+                background: _saveToast.kind === "ok" ? "var(--dao-green)" : "rgb(180,40,40)",
+                color: "white", boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
+                fontSize: 13, lineHeight: 1.5, cursor: "pointer",
+                animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
+                display: _isVoteCast ? "flex" : "block",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              {_isVoteCast && (
+                <img
+                  src="/assets/murmuration-starling.png"
+                  alt=""
+                  style={{ width: 64, height: "auto", flexShrink: 0, userSelect: "none", pointerEvents: "none" }}
+                />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
+                  {_saveToast.kind === "ok"
+                    ? (_isVoteCast ? "✦ Your wingbeat joins the flock" : "✓ Saved")
+                    : "✗ Save failed"}
+                </div>
+                <div>{_saveToast.text}</div>
+              </div>
             </div>
-            <div>{_saveToast.text}</div>
-          </div>
-        )}
+          );
+        })()}
         $1`,
     );
   },
@@ -663,60 +737,84 @@ const _verifyPanelComponent = `
     const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "?");
 
     return (
-      <div style={{ marginTop: 12, borderTop: "1px solid var(--dao-stroke-2)", paddingTop: 12 }}>
+      <div style={{ marginTop: 12, borderTop: "1px solid var(--stroke-line-2)", paddingTop: 14 }}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgb(46,105,154)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.40)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-card)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.30)"; }}
           style={{
-            background: "transparent", border: "none", cursor: "pointer",
-            color: "var(--dao-blue-800)", fontSize: 12, fontWeight: 600,
-            padding: 0, display: "flex", alignItems: "center", gap: 6,
+            background: "var(--surface-card)",
+            border: "1px solid rgba(255,255,255,0.30)",
+            borderRadius: 999,
+            cursor: "pointer",
+            color: "var(--text-primary)",
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.02em",
+            padding: "10px 16px",
+            display: "inline-flex", alignItems: "center", gap: 10,
+            transition: "background .15s, border-color .15s",
           }}
         >
-          <span>{open ? "▾" : "▸"}</span>
-          <span>Verify signed ballots ({ballots.length || "fetch on open"})</span>
+          <span>Verify signed ballots</span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase",
+            padding: "3px 9px", borderRadius: 999,
+            background: "var(--dao-red)", color: "white",
+          }}>{ballots.length || "fetch on open"}</span>
+          <span style={{ fontSize: 11, opacity: 0.85, marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
         </button>
         {open && (
-          <div style={{ marginTop: 10, fontSize: 12 }}>
-            {loading && <div style={{ color: "rgba(11,11,11,0.55)" }}>Re-verifying signatures locally…</div>}
+          <div style={{ marginTop: 14, fontSize: 12, background: "var(--surface-card)", borderRadius: 12, border: "1px solid var(--stroke-line-2)", padding: 18 }}>
+            {loading && <div style={{ color: "var(--text-muted)" }}>Re-verifying signatures locally…</div>}
             {!loading && ballots.length === 0 && (
-              <div style={{ color: "rgba(11,11,11,0.55)" }}>No signed ballots yet for this round.</div>
+              <div style={{ color: "var(--text-muted)" }}>No signed ballots yet for this round.</div>
             )}
             {!loading && ballots.length > 0 && (
               <>
-                <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.62)", marginBottom: 8 }}>
-                  {okCount}/{ballots.length} signatures verified locally · {totalCreditsUsed} total credits used · run by your browser, not our server
+                {/* Summary line above the table */}
+                <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "rgba(92,183,90,0.16)", color: "var(--dao-green)", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                    ✓ {okCount}/{ballots.length} verified
+                  </span>
+                  <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                    {totalCreditsUsed} credits used
+                  </span>
+                  <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                    Run in your browser, not on our server
+                  </span>
                 </div>
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "100px 1fr 1fr 60px",
-                  gap: 6,
+                  gridTemplateColumns: "110px 1fr 1fr 56px",
+                  gap: "0 12px",
                   alignItems: "center",
                   fontFamily: "'JetBrains Mono', monospace",
+                  background: "var(--surface-elevated)",
+                  borderRadius: 8,
+                  overflow: "hidden",
                 }}>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>VOTER</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>ALLOCATION</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>SIGNED AT</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em", textAlign: "center" }}>SIG</div>
+                  {/* header */}
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>VOTER</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>ALLOCATION</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>SIGNED AT</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)", textAlign: "center" }}>SIG</div>
                   {ballots.map((b, i) => {
                     const r = results[i];
                     const ok = r === "ok";
-                    // Human-readable allocation: "ETH: 10pt, USDC: 5pt"
-                    // instead of raw "#1:10 #2:5". Look up labels via the
-                    // global ISSUES array (populated from proposal options
-                    // on hydrate). Falls back to "#<id>" if not found.
                     const unit = round.voting === "quadratic" ? "pt" : "vt";
                     const allocStr = (b.ballot.allocations || []).map((a) => {
                       const issue = ISSUES.find((x) => x.id === Number(a.issueId));
                       const label = issue ? issue.title : ("#" + a.issueId);
                       return label + ": " + a.points + unit;
                     }).join(", ") || "—";
+                    const rowBg = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)";
+                    const rowBorder = i === ballots.length - 1 ? "none" : "1px solid var(--stroke-line-2)";
                     return (
                       <React.Fragment key={i}>
-                        <div style={{ fontSize: 11, color: "var(--dao-blue-900)", fontWeight: 600 }}>{short(b.ballot.voter)}</div>
-                        <div style={{ fontSize: 11, color: "var(--dao-blue-900)" }}>{allocStr}</div>
-                        <div style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>{new Date(b.signedAt).toLocaleString()}</div>
-                        <div style={{ textAlign: "center", fontSize: 14, color: ok ? "rgb(46,120,46)" : "var(--dao-red)", fontWeight: 700 }}>
+                        <div style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600, padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>{short(b.ballot.voter)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "10px 12px", borderBottom: rowBorder, background: rowBg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{allocStr}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>{new Date(b.signedAt).toLocaleString()}</div>
+                        <div style={{ textAlign: "center", fontSize: 14, color: ok ? "var(--dao-green)" : "var(--dao-red)", fontWeight: 700, padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>
                           {ok ? "✓" : "✗"}
                         </div>
                       </React.Fragment>
@@ -730,20 +828,20 @@ const _verifyPanelComponent = `
                 )}
                 {chainCommit && chainCommit.committed && (
                   <div style={{ marginTop: 12, padding: 10, background: "var(--dao-paper-2)", borderRadius: 8, border: "1px solid var(--dao-stroke-2)" }}>
-                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)", marginBottom: 6 }}>
+                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>
                       On-chain commit
                     </div>
                     {(
                       <>
                         <div style={{ fontSize: 12, marginBottom: 4 }}>
                           {chainCommit.root === browserRoot ? (
-                            <span style={{ color: "rgb(46,120,46)", fontWeight: 600 }}>✓ On-chain root matches your browser-computed root</span>
+                            <span style={{ color: "var(--dao-green)", fontWeight: 600 }}>✓ On-chain root matches your browser-computed root</span>
                           ) : (
                             <span style={{ color: "var(--dao-red)", fontWeight: 600 }}>✗ MISMATCH — chain says one thing, ballots say another</span>
                           )}
-                          <span style={{ color: "rgba(11,11,11,0.55)" }}> — {chainCommit.ballotCount} ballots committed</span>
+                          <span style={{ color: "var(--text-muted)" }}> — {chainCommit.ballotCount} ballots committed</span>
                         </div>
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", lineHeight: 1.5, wordBreak: "break-all" }}>
+                        <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5, wordBreak: "break-all" }}>
                           chain: {chainCommit.root}<br/>
                           local: {browserRoot}
                         </div>
@@ -751,7 +849,7 @@ const _verifyPanelComponent = `
                           href={"https://arbiscan.io/address/" + chainCommit.contract}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ fontSize: 11, color: "var(--dao-blue-800)", marginTop: 4, display: "inline-block" }}
+                          style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, display: "inline-block" }}
                         >Verify on Arbiscan ↗</a>
                       </>
                     )}
@@ -796,6 +894,10 @@ flow2 = flow2.replace(
     const [_roundTally, _setRoundTally] = useState({});
     const [_roundVoters, _setRoundVoters] = useState(0);
     const [_deletedOptionIds, _setDeletedOptionIds] = useState([]);
+    // Tick state: bumped after any mutation to the global ISSUES array so
+    // dependent renders (issues.map → cards) re-evaluate. ISSUES is a
+    // module-level mutable global; React can't observe mutations to it.
+    const [, _bumpTick] = useReducer((n) => n + 1, 0);
     // Snapshot the user's saved allocations so a "Cancel edit" can
     // restore the sliders without needing a re-fetch.
     const _hydrateAllocs = (ballot) => {
@@ -824,18 +926,23 @@ flow2 = flow2.replace(
             _setUserBallot(null);
           }
         }
-        // 2) aggregate tally + voter count + deleted option list
+        // 2) aggregate tally + voter count + deleted option list.
+        // /api/proposals/:id returns { proposal, tally, voterCount } — note
+        // options + deletedOptionIds live UNDER proposal, not at the top
+        // level. Reading them as live.options / live.deletedOptionIds (as
+        // earlier versions did) silently no-ops because both are undefined.
         const live = await votingApi.fetchProposal(round.id);
+        const liveProposal = live.proposal || {};
         _setRoundTally(live.tally || {});
         _setRoundVoters(live.voterCount || 0);
-        _setDeletedOptionIds(live.deletedOptionIds || []);
+        _setDeletedOptionIds(liveProposal.deletedOptionIds || []);
         // 3) Defensive ISSUES backfill — when /vote/<id> is a fresh
         // deep-link landing, F2App's bulk hydration may not have
         // populated ISSUES yet. Mutate the global in place so the next
         // render (triggered by the state-sets above) resolves
         // round.issueIds → cards. Without this the user sees an empty
         // Stances list until they refresh.
-        for (const opt of (live.options || [])) {
+        for (const opt of (liveProposal.options || [])) {
           if (!ISSUES.find((i) => i.id === opt.id)) {
             ISSUES.push({
               id: opt.id,
@@ -848,6 +955,10 @@ flow2 = flow2.replace(
             });
           }
         }
+        // Force a re-render so issues.map() picks up any IDs we just
+        // backfilled. ISSUES mutations don't trigger React updates on
+        // their own — the state-sets above batch with this tick.
+        _bumpTick();
       } catch (e) { /* network blip; user can refresh */ }
     };
     // Re-run when round.id, address, or the live issueIds set changes — so
@@ -926,9 +1037,9 @@ flow2 = flow2.replace(
                 </div>
               ) : _dirty ? (
                 <div key="dirty" style={{ animation: "f2statepop .18s ease-out" }}>
-                  <div style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "10px 12px" }}>
-                    <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>● Unsaved changes</div>
-                    <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", marginTop: 3 }}>
+                  <div style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "16px 18px" }}>
+                    <div className="font-display" style={{ fontSize: 16, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>● Unsaved changes</div>
+                    <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.45 }}>
                       Re-sign to cast your new vote.
                     </div>
                   </div>
@@ -937,36 +1048,36 @@ flow2 = flow2.replace(
                     type="button"
                     onClick={_revertToSaved}
                     disabled={_committing}
-                    style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--dao-blue-800)", fontSize: 12, cursor: _committing ? "default" : "pointer", padding: 4, width: "100%", textAlign: "center", textDecoration: "underline", opacity: _committing ? 0.5 : 1 }}
+                    style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--text-secondary)", fontSize: 12, cursor: _committing ? "default" : "pointer", padding: 4, width: "100%", textAlign: "center", textDecoration: "underline", opacity: _committing ? 0.5 : 1 }}
                   >Revert to last signed</button>
                 </div>
               ) : _allOrphaned ? (
-                <div key="invalidated" style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "12px 14px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>⚠ Your vote was invalidated</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgb(180,115,20)", marginTop: 4 }}>
-                    ✓ {_orphanedCredits} pending credits refunded
+                <div key="invalidated" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your vote was invalidated</div>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
+                    ✓ {_orphanedCredits} pending murmurs returned to your flock
                   </div>
-                  <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.7)", marginTop: 6, lineHeight: 1.45 }}>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     Every issue you voted on was deleted. Slide to allocate again.
                   </div>
                 </div>
               ) : _hasOrphans ? (
-                <div key="partial" style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "12px 14px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>⚠ You partially voted</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgb(180,115,20)", marginTop: 4 }}>
-                    ✓ {_orphanedCredits} pending credits refunded
+                <div key="partial" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ You partially voted</div>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
+                    ✓ {_orphanedCredits} pending murmurs returned to your flock
                   </div>
-                  <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.7)", marginTop: 6, lineHeight: 1.45 }}>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     An issue you voted on was deleted. Slide to reallocate.
                   </div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.45)", marginTop: 6 }}>
+                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                     Signed {_prettyLocalClose(_userBallot.signedAt)}
                   </div>
                 </div>
               ) : (
-                <div key="clean" style={{ background: "rgba(46,120,46,0.08)", border: "1px solid rgba(46,120,46,0.35)", borderRadius: 10, padding: "10px 12px", textAlign: "center", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(46,120,46)" }}>✓ Vote on file</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", marginTop: 3 }}>
+                <div key="clean" style={{ background: "rgba(92,183,90,0.10)", border: "1px solid rgba(92,183,90,0.40)", borderLeft: "4px solid var(--dao-green)", borderRadius: 10, padding: "16px 18px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "var(--dao-green)", letterSpacing: "-0.01em" }}>✓ Murmur on file</div>
+                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                     Signed {_prettyLocalClose(_userBallot.signedAt)}
                   </div>
                 </div>
@@ -1031,11 +1142,11 @@ flow2 = flow2.replace(
                           onClick={(e) => { e.stopPropagation(); _setDeletingIssueId(iss.id); }}
                           style={{
                             background: "transparent", border: "none", cursor: "pointer",
-                            color: "rgba(11,11,11,0.3)", fontSize: 28, lineHeight: 1,
+                            color: "var(--text-faint)", fontSize: 28, lineHeight: 1,
                             padding: "4px 12px",
                           }}
                           onMouseEnter={e => e.currentTarget.style.color = "var(--dao-red)"}
-                          onMouseLeave={e => e.currentTarget.style.color = "rgba(11,11,11,0.3)"}
+                          onMouseLeave={e => e.currentTarget.style.color = "var(--text-faint)"}
                         >×</button>
                       )}
                     </div>
@@ -1053,20 +1164,24 @@ flow2 = flow2.replace(
   `                  )}
                   {(() => {
                     const total = Number(_roundTally[iss.id] || 0);
+                    // Live-leader detection: which option has the highest total
+                    // right now? Mascot perches on the leader. For rolling votes
+                    // ("always open"), this shows who's winning at any moment.
+                    const _tallyNums = Object.values(_roundTally).map(Number).filter((n) => !isNaN(n));
+                    const _maxTotal = _tallyNums.length ? Math.max(..._tallyNums) : 0;
+                    const _isLeader = _maxTotal > 0 && total === _maxTotal;
                     // delta = current slider value − the user's previously-
                     // signed value for this issue (0 if they haven't voted).
                     const prev = _userBallot
                       ? Number(((_userBallot.ballot.allocations || []).find((a) => Number(a.issueId) === Number(iss.id)) || {}).points || 0)
                       : 0;
                     const delta = (v || 0) - prev;
-                    // Only show delta when actively editing a vote OR when
-                    // a first-time voter is mid-allocation (no saved ballot
-                    // yet but they're sliding). Read-only roles never see it.
                     const showDelta = canVote(role) && delta !== 0;
                     const unit = round.voting === "quadratic" ? "pts" : (Number(total) === 1 ? "vote" : "votes");
                     return (
                       <div style={{
-                        background: "var(--dao-paper-2)",
+                        background: _isLeader ? "rgba(255,60,56,0.06)" : "var(--dao-paper-2)",
+                        border: _isLeader ? "1px solid rgba(255,60,56,0.28)" : "none",
                         borderRadius: 10,
                         padding: "14px 12px",
                         display: "flex",
@@ -1075,26 +1190,41 @@ flow2 = flow2.replace(
                         justifyContent: "center",
                         textAlign: "center",
                         gap: 4,
+                        position: "relative",
                       }}>
-                        <div className="font-mono" style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>
-                          TOTAL
+                        {_isLeader && (
+                          <img
+                            src="/assets/murmuration-starling.png"
+                            alt=""
+                            title="Currently leading the murmuration"
+                            style={{
+                              position: "absolute",
+                              top: -22,
+                              right: -10,
+                              width: 56,
+                              height: "auto",
+                              userSelect: "none",
+                              pointerEvents: "none",
+                              filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.18))",
+                            }}
+                          />
+                        )}
+                        <div className="font-mono" style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: _isLeader ? "var(--dao-red-dim)" : "var(--text-muted)", fontWeight: _isLeader ? 700 : 400 }}>
+                          {_isLeader ? "✦ LEADER" : "TOTAL"}
                         </div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 6, justifyContent: "center" }}>
-                          <span className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--dao-blue-900)", lineHeight: 1 }}>
+                          <span className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>
                             {total}
                           </span>
                           {showDelta && (
                             <span className="font-mono" style={{
                               fontSize: 14,
                               fontWeight: 700,
-                              color: delta > 0 ? "rgb(46,120,46)" : "var(--dao-red)",
+                              color: delta > 0 ? "var(--dao-green)" : "var(--dao-red)",
                             }}>
                               {delta > 0 ? "+" : "−"}{Math.abs(delta)}
                             </span>
                           )}
-                        </div>
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)" }}>
-                          {unit} · {_roundVoters} voter{_roundVoters === 1 ? "" : "s"}
                         </div>
                       </div>
                     );
@@ -1118,22 +1248,22 @@ flow2 = flow2.replace(
 flow2 = flow2.replace(
   /<span className="tag-mono">\{issue\.chain\}<\/span>\n\s*<span className="font-mono" style=\{\{ fontSize: 12, color: "rgba\(11,11,11,0\.55\)" \}\}>· #\{issue\.num\} · \{issue\.repo\}<\/span>/,
   `{issue.githubUrl ? (
-            <a href={issue.githubUrl} target="_blank" rel="noreferrer" className="font-mono" style={{ fontSize: 12, color: "var(--dao-blue-700)" }}>
+            <a href={issue.githubUrl} target="_blank" rel="noreferrer" className="font-mono" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
               ↗ github #{issue.githubNumber}
             </a>
           ) : null}`,
 );
 flow2 = flow2.replace(
   /<div className="font-mono" style=\{\{ fontSize: 12, color: "rgba\(11,11,11,0\.55\)", marginBottom: 28 \}\}>\n\s*opened by <b style=\{\{ color: "var\(--dao-blue-900\)" \}\}>\{issue\.author\}<\/b> · \{issue\.opened\} ago · \{issue\.comments\} comments\n\s*<\/div>/,
-  `<div className="font-mono" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", marginBottom: 28 }}>
-          {issue.submittedBy ? (<>submitted by <b style={{ color: "var(--dao-blue-900)" }}>{issue.submittedBy.slice(0,6)}…{issue.submittedBy.slice(-4)}</b></>) : null}
+  `<div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 28 }}>
+          {issue.submittedBy ? (<>submitted by <b style={{ color: "var(--text-primary)" }}>{issue.submittedBy.slice(0,6)}…{issue.submittedBy.slice(-4)}</b></>) : null}
         </div>`,
 );
 // Ditch the hardcoded "POC ATTACHED" mock pre-block (not relevant to our
 // app at all — it was prototype filler) and just render the body.
 flow2 = flow2.replace(
   /\{issue\.body\}\n\s*<div style=\{\{ marginTop: 24, padding: 24, background: "var\(--dao-paper-2\)", borderRadius: 12, borderLeft: "3px solid var\(--dao-red\)" \}\}>\n\s*<div className="font-mono" style=\{\{ fontSize: 11, letterSpacing: "0\.1em", textTransform: "uppercase", color: "var\(--dao-red-dim\)", marginBottom: 8 \}\}>POC ATTACHED<\/div>\n\s*<pre style=\{\{ margin: 0, fontFamily: "JetBrains Mono", fontSize: 13, lineHeight: 1\.6 \}\}>\{`forge test --match-test test_Reentrancy_DrainsVault\n\[PASS\] test_Reentrancy_DrainsVault \(gas: 412,008\)\n   ↳ vault\.balance: 75,224 ETH → 0 ETH`\}<\/pre>\n\s*<\/div>/,
-  `<div style={{ whiteSpace: "pre-wrap" }}>{issue.body || <i style={{ color: "rgba(11,11,11,0.45)" }}>(no description)</i>}</div>`,
+  `<div style={{ whiteSpace: "pre-wrap" }}>{issue.body || <i style={{ color: "var(--text-faint)" }}>(no description)</i>}</div>`,
 );
 // Replace the totalVotes / voters footer with values derived from
 // state we actually have. _roundTally and _roundVoters aren't in scope
@@ -1296,7 +1426,7 @@ flow2 = flow2.replace(
                           className="btn btn-primary"
                           onClick={() => _castVote(r)}
                           disabled={isSigning}
-                          style={ok ? { background: "rgb(46,120,46)", borderColor: "rgb(46,120,46)" } : undefined}
+                          style={ok ? { background: "var(--dao-green)", borderColor: "var(--dao-green)" } : undefined}
                         >{label}</button>
                       );
                     })()}
@@ -1306,7 +1436,7 @@ flow2 = flow2.replace(
                       const breakdown = st.ok.allocs.map(a => a.points).join("+");
                       const unit = r.voting === "quadratic" ? "credits" : "votes";
                       return (
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgb(46,120,46)", lineHeight: 1.4, textAlign: "right" }}>
+                        <div className="font-mono" style={{ fontSize: 10, color: "var(--dao-green)", lineHeight: 1.4, textAlign: "right" }}>
                           ✓ VOTED · {breakdown} = {st.ok.total} {unit} used
                         </div>
                       );
@@ -1320,42 +1450,10 @@ flow2 = flow2.replace(
                     })()}
                   </div>`,
 );
-// Mount the toast as a fixed-position sibling of the outer div in
-// F2Ballot. Inject right before the outer wrapper's closing </div>,
-// which is the last </div> before the function's `);` and Admin
-// section comment. Anchor: the unique pattern at end of F2Ballot.
-flow2 = flow2.replace(
-  /(\}\)\}\n\s*<\/div>\n)(\s*<\/div>\n\s*\);\n\s*\}\n\n\s*\/\/ ── Admin)/,
-  `$1        {_toast && (
-          <div
-            role="status"
-            style={{
-              position: "fixed",
-              bottom: 24,
-              right: 24,
-              zIndex: 99999,
-              minWidth: 280,
-              maxWidth: 420,
-              padding: "14px 18px",
-              borderRadius: 12,
-              background: _toast.kind === "ok" ? "rgb(46,120,46)" : "rgb(180,40,40)",
-              color: "white",
-              boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
-              fontSize: 13,
-              lineHeight: 1.5,
-              animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
-              cursor: "pointer",
-            }}
-            onClick={() => _setToast(null)}
-          >
-            <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
-              {_toast.kind === "ok" ? "✓ Vote signed" : "✗ Sign failed"}
-            </div>
-            <div>{_toast.text}</div>
-          </div>
-        )}
-$2`,
-);
+// (F2Ballot toast injection removed — the page is now read-only, no
+// signing happens there, so there's no toast to render. The regex
+// anchor still matched the new function's tail and was injecting a
+// reference to undefined `_toast`, blanking the page.)
 
 // --- F2Submit: accept tokens + address; filter rounds by eligibility
 // Real on-chain ERC-721 balanceOf reads via wagmi's useReadContracts.
@@ -1363,7 +1461,7 @@ $2`,
 // connected wallet actually holds appear in the dropdown.
 flow2 = flow2.replace(
   /function F2Submit\(\{ rounds, role \}\) \{/,
-  `function F2Submit({ rounds, role, tokens, address, setRounds, setSaveToast, onSubmitted }) {`,
+  `function F2Submit({ rounds, role, tokens, address, setRounds, setSaveToast, onSubmitted, preselectRoundId }) {`,
 );
 // Replace the dropdown's source list — `rounds.filter(r => r.status === "open")`
 // — with an eligibility-aware list computed via useReadContracts.
@@ -1413,15 +1511,67 @@ flow2 = flow2.replace(
       return ok ? re.round : null;
     }).filter(Boolean);
 
-    // Auto-pick the first eligible round when results arrive.
+    // Auto-pick a round when results arrive: prefer the round the user
+    // came from (preselectRoundId, set when they clicked "+ Add issue"
+    // inside a vote) if it's eligible; otherwise fall back to the first
+    // eligible round.
     useEffect(() => {
-      if (eligibleRounds.length > 0 && !roundId) {
-        setRoundId(eligibleRounds[0].id);
-      }
-    }, [eligibleRounds.length, roundId]);
+      if (eligibleRounds.length === 0 || roundId) return;
+      const preselected = preselectRoundId && eligibleRounds.find((r) => r.id === preselectRoundId);
+      setRoundId(preselected ? preselected.id : eligibleRounds[0].id);
+    }, [eligibleRounds.length, roundId, preselectRoundId]);
     const _eligibilityLoading = !!address && _eligibilityCalls.length > 0 && !_eligibilityBalances;
     const _hasOpenRoundsButNoneEligible = _openRounds.length > 0 && eligibleRounds.length === 0 && !_eligibilityLoading;
-    const _noOpenRoundsAtAll = _openRounds.length === 0;`,
+    const _noOpenRoundsAtAll = _openRounds.length === 0;
+    // When the user arrived via "+ Add issue" inside a specific vote, the
+    // round is locked. Compute its status so the form can short-circuit
+    // to a "vote is closed" / "missing badge" message instead of letting
+    // the user fill out a form whose submit will fail.
+    const _preselectedRound = preselectRoundId
+      ? rounds.find((r) => r.id === preselectRoundId)
+      : null;
+    const _preselectClosed = !!(_preselectedRound && _preselectedRound.status !== "open");
+    const _preselectIneligible = !!(
+      _preselectedRound &&
+      _preselectedRound.status === "open" &&
+      !_eligibilityLoading &&
+      !eligibleRounds.find((r) => r.id === preselectRoundId)
+    );`,
+);
+
+// --- F2Submit: short-circuit guards for the locked-round flow. If the
+// vote is closed or the user doesn't hold its eligibility badge, return
+// an explanatory message instead of the form so the user isn't allowed
+// to type out a submission that will silently fail at sign time.
+flow2 = flow2.replace(
+  /if \(!canSubmit\(role\)\) \{\n(\s+)return \(\n\s+<div style=\{\{ padding: 80, textAlign: "center" \}\}>\n\s+<div className="font-display" style=\{\{ fontSize: 32, fontWeight: 700, color: "var\(--text-primary\)" \}\}>Only ETHSecurity Badge holders can submit issues<\/div>\n\s+<div className="font-body" style=\{\{ color: "var\(--text-muted\)", marginTop: 8 \}\}>If you don't want to connect a wallet, you can fork the repo and open an issue on GitHub instead\.<\/div>\n\s+<a href="#" className="btn btn-ghost" style=\{\{ marginTop: 20 \}\}>↗ Open on GitHub<\/a>\n\s+<\/div>\n\s+\);\n\s+\}/,
+  `if (!canSubmit(role)) {
+$1return (
+$1  <div style={{ padding: 80, textAlign: "center" }}>
+$1    <div className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--text-primary)" }}>Only ETHSecurity Badge holders can submit issues</div>
+$1    <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8 }}>If you don't want to connect a wallet, you can fork the repo and open an issue on GitHub instead.</div>
+$1    <a href="#" className="btn btn-ghost" style={{ marginTop: 20 }}>↗ Open on GitHub</a>
+$1  </div>
+$1);
+$1}
+$1if (_preselectClosed) {
+$1return (
+$1  <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+$1    <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>This vote is closed</div>
+$1    <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>"{_preselectedRound.title}" stopped accepting new options when it closed. Check the open votes for somewhere your submission belongs.</div>
+$1    <button className="btn btn-ghost" style={{ marginTop: 20 }} onClick={() => { if (typeof window !== "undefined") { window.history.pushState({}, "", "/votes"); window.dispatchEvent(new PopStateEvent("popstate")); } }}>← Back to votes</button>
+$1  </div>
+$1);
+$1}
+$1if (_preselectIneligible) {
+$1return (
+$1  <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+$1    <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>You don't hold the badge for this vote</div>
+$1    <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>"{_preselectedRound.title}" requires an ETHSecurity Badge that isn't in your wallet. Ask an admin to mint you the right one and refresh.</div>
+$1    <button className="btn btn-ghost" style={{ marginTop: 20 }} onClick={() => { if (typeof window !== "undefined") { window.history.pushState({}, "", "/vote/" + preselectRoundId); window.dispatchEvent(new PopStateEvent("popstate")); } }}>← Back to vote</button>
+$1  </div>
+$1);
+$1}`,
 );
 
 // --- F2Submit: replace the round dropdown with an empty-state-aware
@@ -1432,22 +1582,34 @@ flow2 = flow2.replace(
 flow2 = flow2.replace(
   /<Field label="Round">\n\s*<select className="input" value=\{roundId\} onChange=\{e => setRoundId\(e\.target\.value\)\}>\n\s*\{eligibleRounds\.map\(r => \(\n\s*<option key=\{r\.id\} value=\{r\.id\}>\{r\.title\} · \{r\.voting === "quadratic" \? "QV" : "Token-weight"\}\{r\.rolling \? " · rolling" : ""\}<\/option>\n\s*\)\)\}\n\s*<\/select>\n\s*<\/Field>/,
   `<Field label="Round">
-              {_eligibilityLoading && (
-                <div className="font-mono" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", padding: "10px 0" }}>
+              {/* Came from inside a vote — round is locked, no dropdown. */}
+              {preselectRoundId && (() => {
+                const _r = rounds.find((rr) => rr.id === preselectRoundId);
+                if (!_r) return null;
+                return (
+                  <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", borderRadius: 8, border: "1px solid var(--stroke-line-2)", display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-primary)" }}>
+                    <span className="font-display" style={{ fontWeight: 600 }}>{_r.title}</span>
+                    <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>· {_r.voting === "quadratic" ? "QV" : "Token-weight"}{_r.rolling ? " · rolling" : ""}</span>
+                  </div>
+                );
+              })()}
+              {/* No preselect — fall back to the standard picker flow. */}
+              {!preselectRoundId && _eligibilityLoading && (
+                <div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", padding: "10px 0" }}>
                   Checking your eligibility on-chain…
                 </div>
               )}
-              {!_eligibilityLoading && _noOpenRoundsAtAll && (
-                <div style={{ padding: 14, background: "var(--dao-paper-2)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 8, fontSize: 13, color: "rgba(11,11,11,0.62)" }}>
+              {!preselectRoundId && !_eligibilityLoading && _noOpenRoundsAtAll && (
+                <div style={{ padding: 14, background: "var(--dao-paper-2)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
                   No open votes right now. Wait for an admin to publish one before you can submit.
                 </div>
               )}
-              {!_eligibilityLoading && _hasOpenRoundsButNoneEligible && (
-                <div style={{ padding: 14, background: "rgba(218,165,32,0.08)", border: "1px solid rgba(218,165,32,0.35)", borderRadius: 8, fontSize: 13, color: "var(--dao-blue-900)" }}>
+              {!preselectRoundId && !_eligibilityLoading && _hasOpenRoundsButNoneEligible && (
+                <div style={{ padding: 14, background: "rgba(218,165,32,0.08)", border: "1px solid rgba(218,165,32,0.35)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)" }}>
                   There are open votes, but you don't hold the eligibility badge for any of them. Ask an admin to mint you the relevant badge, then refresh.
                 </div>
               )}
-              {!_eligibilityLoading && eligibleRounds.length > 0 && (
+              {!preselectRoundId && !_eligibilityLoading && eligibleRounds.length > 0 && (
                 <select className="input" value={roundId || ""} onChange={e => setRoundId(e.target.value)}>
                   {eligibleRounds.map(r => (
                     <option key={r.id} value={r.id}>{r.title} · {r.voting === "quadratic" ? "QV" : "Token-weight"}{r.rolling ? " · rolling" : ""}</option>
@@ -1463,8 +1625,8 @@ flow2 = flow2.replace(
 // import (URL pasted) tags an existing one. Runs AFTER the eligibility
 // transform above which already added tokens+address.
 flow2 = flow2.replace(
-  /function F2Submit\(\{ rounds, role, tokens, address, setRounds, setSaveToast, onSubmitted \}\) \{/,
-  `function F2Submit({ rounds, setRounds, role, tokens, address, setSaveToast, onSubmitted }) {
+  /function F2Submit\(\{ rounds, role, tokens, address, setRounds, setSaveToast, onSubmitted, preselectRoundId \}\) \{/,
+  `function F2Submit({ rounds, setRounds, role, tokens, address, setSaveToast, onSubmitted, preselectRoundId }) {
     const { data: _walletClient } = wagmi.useWalletClient();
     const [_submitting, _setSubmitting] = useState(false);
     const [_importPreview, _setImportPreview] = useState(null);
@@ -1574,8 +1736,8 @@ flow2 = flow2.replace(
 // auto-tagged for this vote when it's filed on github.
 flow2 = flow2.replace(
   /<div style=\{\{ background: "rgba\(40,86,122,0\.06\)", padding: 14, borderRadius: 10, fontSize: 12, color: "rgba\(11,11,11,0\.62\)", lineHeight: 1\.55 \}\}>\n\s*<b style=\{\{ color: "var\(--dao-blue-900\)" \}\}>Don't want to connect GitHub\?<\/b> Fork the repo, open the issue there, then paste the URL here\.\n\s*<\/div>/,
-  `<div style={{ background: "rgba(40,86,122,0.06)", padding: 14, borderRadius: 10, fontSize: 12, color: "rgba(11,11,11,0.62)", lineHeight: 1.6 }}>
-                <div style={{ color: "var(--dao-blue-900)", fontWeight: 600, marginBottom: 6 }}>How to import an issue</div>
+  `<div style={{ background: "rgba(40,86,122,0.06)", padding: 14, borderRadius: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.6 }}>
+                <div style={{ color: "var(--text-primary)", fontWeight: 600, marginBottom: 6 }}>How to import an issue</div>
                 <ol style={{ margin: 0, paddingLeft: 18 }}>
                   <li>Open a new issue on our intake repo using the link below — it pre-applies the <code style={{ background: "rgba(40,86,122,0.1)", padding: "1px 5px", borderRadius: 3, fontSize: 11 }}>vote:{roundId || "<vote-id>"}</code> label so the issue is auto-tagged for this vote.</li>
                   <li>Fill in the title + body on GitHub, hit Submit.</li>
@@ -1589,7 +1751,7 @@ flow2 = flow2.replace(
                       : "https://github.com/xerxes-openclaw/thedaolog-issues/issues/new"}
                     target="_blank"
                     rel="noreferrer"
-                    style={{ color: "var(--dao-blue-700)", fontWeight: 600 }}
+                    style={{ color: "var(--text-secondary)", fontWeight: 600 }}
                   >→ Open a new GitHub issue for this vote</a>
                 </div>
               </div>`,
@@ -1601,7 +1763,7 @@ flow2 = flow2.replace(
   /<button className="btn btn-ghost" style=\{\{ marginTop: 8, fontSize: 12 \}\} onClick=\{\(\) => setImported\(true\)\}>\{imported \? "✓ Re-fetch" : "Fetch"\}<\/button>/,
   `<button className="btn btn-secondary" style={{ marginTop: 8, fontSize: 13, padding: "6px 18px", fontWeight: 600 }} onClick={_fetchPreview} disabled={_previewLoading || !importUrl}>{_previewLoading ? "Fetching…" : (imported ? "✓ Re-fetch" : "Fetch preview")}</button>
               {_previewError && (
-                <div style={{ marginTop: 8, padding: 8, background: "rgba(255,60,56,0.08)", border: "1px solid rgba(255,60,56,0.35)", borderRadius: 6, fontSize: 12, color: "var(--dao-blue-900)" }}>
+                <div style={{ marginTop: 8, padding: 8, background: "rgba(255,60,56,0.08)", border: "1px solid rgba(255,60,56,0.35)", borderRadius: 6, fontSize: 12, color: "var(--text-primary)" }}>
                   Couldn't fetch: {_previewError}
                 </div>
               )}`,
@@ -1616,10 +1778,10 @@ flow2 = flow2.replace(
                   <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginBottom: 6 }}>
                     ✓ FETCHED FROM GITHUB · #{_importPreview.number}
                   </div>
-                  <div className="font-display" style={{ fontWeight: 600, fontSize: 17, color: "var(--dao-blue-900)" }}>
+                  <div className="font-display" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>
                     {_importPreview.title}
                   </div>
-                  <div className="font-body" style={{ fontSize: 13, color: "rgba(11,11,11,0.62)", marginTop: 4, whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}>
                     {(_importPreview.body || "").slice(0, 1200) || <i>(no body)</i>}{(_importPreview.body || "").length > 1200 ? "…" : ""}
                   </div>
                   <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
@@ -1628,7 +1790,7 @@ flow2 = flow2.replace(
                     ))}
                   </div>
                   <div style={{ marginTop: 10, fontSize: 11 }}>
-                    <a href={_importPreview.html_url} target="_blank" rel="noreferrer" style={{ color: "var(--dao-blue-700)" }}>View on GitHub ↗</a>
+                    <a href={_importPreview.html_url} target="_blank" rel="noreferrer" style={{ color: "var(--text-secondary)" }}>View on GitHub ↗</a>
                   </div>
                 </div>
               )}`,
@@ -1651,7 +1813,7 @@ flow2 = flow2.replace(
           style={{
             width: 36, height: 36, borderRadius: 999, flexShrink: 0,
             objectFit: "cover",
-            boxShadow: "inset 0 0 0 1px rgba(11,11,11,0.08)",
+            boxShadow: "inset 0 0 0 1px var(--stroke-line)",
             background: "var(--dao-paper-2)",
           }}
         />
@@ -1838,7 +2000,7 @@ const TIME_HELPERS = `
     let tz = "local";
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local"; } catch (e) { void e; }
     return (
-      <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", marginTop: 6, lineHeight: 1.6 }}>
+      <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
         Now: {localStr} ({tz}) · {utcStr} UTC
       </div>
     );
@@ -1893,7 +2055,7 @@ flow2 = flow2.replace(
 flow2 = flow2.replace(
   /<Field label=\{"Closes \(" \+ _localTzShort\(\) \+ "\)"\}>\s*<DateTimePickerUtc[^/]+\/>\s*<\/Field>/,
   `<div style={{ opacity: r.rolling ? 0.35 : 1, pointerEvents: r.rolling ? "none" : "auto", transition: "opacity .18s ease" }}>
-                <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Duration</label>
+                <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Duration</label>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <select className="input" value={closeMode} onChange={e => setCloseMode(e.target.value)} disabled={r.rolling} style={{ flex: closeMode === "custom" ? "0 0 140px" : 1 }}>
                     <option value="1w">1 week</option>
@@ -1907,7 +2069,7 @@ flow2 = flow2.replace(
                     <DateTimePickerUtc value={r.rolling ? "" : r.closes} onChange={(v) => set("closes", v)} disabled={r.rolling} placeholder={r.rolling ? "— rolling —" : ""} />
                   )}
                 </div>
-                <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", marginTop: 6 }}>
+                <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
                   Closes: {r.rolling ? "rolling — no end date" : (_prettyLocalClose(r.closes) || "—")}
                 </div>
               </div>`,

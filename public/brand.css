@@ -19,8 +19,8 @@
   --dao-gold-600: rgb(195, 142, 32);
   --dao-gold-800: rgb(120, 82, 18);
 
-  --dao-red:      rgb(232, 70, 66);
-  --dao-red-dim:  rgb(200, 54, 50);
+  --dao-red:      #FF3C38;
+  --dao-red-dim:  #DC2F2B;
   --dao-red-soft: rgb(255, 165, 163);
 
   --dao-green:    rgb(45, 136, 64);
@@ -44,7 +44,99 @@
   --r-md: 10px;
   --r-lg: 16px;
   --r-xl: 24px;
+
+  /* Semantic theme tokens — these swap when `.dark-app` is the ancestor.
+     Always use these (not raw colors) for app text / surfaces so dark mode
+     swaps cleanly. Light defaults below; dark overrides further down. */
+  --surface-app:      var(--dao-paper);
+  --surface-card:     #ffffff;
+  --surface-elevated: var(--dao-paper-2);
+  --surface-pop:      var(--dao-paper-2);
+  --text-primary:     var(--dao-blue-900);
+  --text-secondary:   var(--dao-blue-800);
+  --text-muted:       rgba(11, 11, 11, 0.62);
+  --text-faint:       rgba(11, 11, 11, 0.45);
+  --stroke-line:      var(--dao-stroke-2);
+  --stroke-line-2:    var(--dao-stroke);
 }
+
+/* Dark mode — applied when an ancestor element has `.dark-app`.
+   Palette pulled verbatim from thedao.fund so the app feels like a
+   continuation of the marketing site, not a separate product. */
+.dark-app {
+  --surface-app:      #28567a;   /* dao-blue (thedao.fund page bg) */
+  --surface-card:     #2c5e86;   /* dao-blue-light (raised cards) */
+  --surface-elevated: #1f435f;   /* dao-blue-dark (header / recessed) */
+  --surface-pop:      rgba(255, 255, 255, 0.06);
+  --text-primary:     #ffffff;
+  --text-secondary:   rgba(255, 255, 255, 0.88);
+  --text-muted:       rgba(255, 255, 255, 0.62);
+  --text-faint:       rgba(255, 255, 255, 0.55);
+  --stroke-line:      rgba(255, 255, 255, 0.08);
+  --stroke-line-2:    rgba(255, 255, 255, 0.14);
+  /* Also flip the brand vars for any leftover references */
+  --dao-paper:        #28567a;
+  --dao-paper-2:      #2c5e86;
+  --dao-ink:          #ffffff;
+  --dao-stroke:       rgba(255, 255, 255, 0.14);
+  --dao-stroke-2:     rgba(255, 255, 255, 0.08);
+  /* Brighter green to match thedao.fund's accent */
+  --dao-green:        #5cb75a;
+  --dao-green-light:  rgb(140, 220, 140);
+  background: #28567a;
+  color: #ffffff;
+  /* Tells the browser this subtree is dark — Chromium/Firefox will pick
+     dark variants for native UI: select dropdown popups, scrollbars,
+     date pickers, etc. Without this they fall back to the OS default
+     (white on dark navy = unreadable). */
+  color-scheme: dark;
+}
+
+/* Belt-and-suspenders option styling — Chromium honors these on the
+   `<option>` element directly even though the popup paint is native. */
+.dark-app .input option,
+.dark-app select.input option {
+  background-color: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+/* Dark-mode adjustments for shared component classes */
+.dark-app .input {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-color: var(--stroke-line-2);
+}
+.dark-app .input::placeholder { color: var(--text-faint); }
+.dark-app .input:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+.dark-app .btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid var(--stroke-line-2);
+}
+.dark-app .btn-secondary:hover { background: rgba(255, 255, 255, 0.14); }
+.dark-app .tag-mono {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--text-secondary);
+}
+
+/* Role chip in dark mode — keep colored dot, light up text so it stays
+   readable on the navy header. Inline `color: var(--dao-blue-800)` etc.
+   would otherwise render dark-on-dark. */
+.dark-app .role-chip { color: rgba(255, 255, 255, 0.92) !important; }
+.dark-app .role-chip.role-visitor { background: rgba(255, 255, 255, 0.10) !important; }
+.dark-app .role-chip.role-badgeholder { background: rgba(245, 210, 110, 0.20) !important; color: rgb(245, 210, 110) !important; }
+.dark-app .role-chip.role-admin { background: rgba(255, 60, 56, 0.20) !important; color: rgb(255, 200, 200) !important; }
+
+/* Severity tags — same problem as role chips. Inline colors are tuned for
+   light bg so they'd render invisibly on navy. Brighten per-severity. */
+.dark-app .sev-tag.sev-critical { background: rgba(255, 60, 56, 0.22) !important; color: rgb(255, 180, 180) !important; }
+.dark-app .sev-tag.sev-high     { background: rgba(247, 144, 9, 0.22) !important; color: rgb(255, 200, 130) !important; }
+.dark-app .sev-tag.sev-medium   { background: rgba(244, 198, 36, 0.22) !important; color: rgb(255, 230, 140) !important; }
+.dark-app .sev-tag.sev-low      { background: rgba(123, 179, 224, 0.25) !important; color: rgb(180, 220, 255) !important; }
+.dark-app .sev-tag.sev-info     { background: rgba(255, 255, 255, 0.10) !important; color: rgba(255, 255, 255, 0.82) !important; }
 
 * { box-sizing: border-box; }
 .font-display { font-family: 'Inter Tight', sans-serif; letter-spacing: -0.01em; }

@@ -5,7 +5,7 @@ import * as React from "react";
 import * as wagmi from "wagmi";
 import { verifyTypedData } from "viem";
 import * as votingApi from "./votingApi";
-const { useState, useMemo, useEffect, useRef } = React;
+const { useState, useMemo, useEffect, useRef, useReducer } = React;
 
 // Minimal ERC-721 balanceOf ABI used by F2Submit's eligibility filter.
 const _erc721BalanceOfAbi = [{
@@ -200,34 +200,44 @@ function DaoLogo({ size = 32, color = "rgb(255,60,56)", shadow = true }) {
   );
 }
 
-// Real theDAO logotype — logomark + "TheDAO Security Fund" wordmark.
-// `light` swaps text color to white for use on dark surfaces.
-// `compact` drops the "Security Fund" suffix when space is tight.
+// Murmuration logotype — flock-Eth-diamond logomark + "Murmuration" wordmark.
+// `light` swaps text + logo color to white for use on dark surfaces.
+// `compact` drops the wordmark text and shows only the logo.
 function Wordmark({ light = false, size = 32, compact = false }) {
-  // Figma spec: wordmark is 84.6px tall when logomark is 132.7px → ratio ~0.638.
-  // We size text relative to the logomark for visual rhythm.
   const fontSize = Math.round(size * 0.62);
   const textColor = light ? "white" : "rgb(44,94,134)";
+  // Source logo is black-on-transparent; invert on dark surfaces.
+  const logoFilter = light ? "invert(1) brightness(2)" : "none";
   return (
     <div style={{
       display: "inline-flex",
       alignItems: "center",
-      gap: size * 0.36,
+      gap: 0,
     }}>
-      <DaoLogo size={size} />
-      <div style={{
-        fontFamily: "'Inter Tight', 'Inter', sans-serif",
-        fontSize,
-        lineHeight: 1.1,
-        letterSpacing: "-0.01em",
-        color: textColor,
-        whiteSpace: "nowrap",
-      }}>
-        <span style={{ fontWeight: 700 }}>TheDAO</span>
-        {!compact && (
-          <span style={{ fontWeight: 400 }}> Security Fund</span>
-        )}
-      </div>
+      <img
+        src="/assets/murmuration-logo.png"
+        alt="Murmuration"
+        style={{
+          height: size * 1.4,
+          width: "auto",
+          filter: logoFilter,
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      />
+      {!compact && (
+        <div style={{
+          fontFamily: "'Inter Tight', 'Inter', sans-serif",
+          fontSize,
+          fontWeight: 700,
+          lineHeight: 1.1,
+          letterSpacing: "-0.01em",
+          color: textColor,
+          whiteSpace: "nowrap",
+        }}>
+          Murmuration
+        </div>
+      )}
     </div>
   );
 }
@@ -315,7 +325,7 @@ function BadgeMedallion({ size = 320, rings = true }) {
 }
 
 // Square-pattern backdrop matching theDAO brand image — soft translucent rounded squares
-function SquaresBackdrop({ density = 14, opacity = 1, tint = "light" }) {
+function SquaresBackdrop({ density = 14, opacity = 1, tint = "light", withDaoMark = false, redEvery = 0, redOnly = false }) {
   const squares = [];
   for (let i = 0; i < density; i++) {
     const seed = i * 9301 + 49297;
@@ -326,19 +336,51 @@ function SquaresBackdrop({ density = 14, opacity = 1, tint = "light" }) {
     const r = ((i * 13) % 18) - 9;
     squares.push({ x, y, s, a, r });
   }
+  // Default tinting (unchanged behavior for existing callers)
   const fill = tint === "light"
     ? (a) => `rgba(180,210,235,${a * 1.4})`
     : (a) => `rgba(255,255,255,${a})`;
+  // Red tint for branded squares (only used when redEvery > 0)
+  const redFill = (a) => `rgba(255,60,56,${a * 1.6})`;
   return (
     <div className="dao-squares-bg" style={{ opacity }}>
-      {squares.map((sq, i) => (
-        <div key={i} className="sq" style={{
-          left: `${sq.x}%`, top: `${sq.y}%`,
-          width: sq.s, height: sq.s,
-          background: fill(sq.a),
-          transform: `translate(-50%,-50%) rotate(${sq.r}deg)`,
-        }} />
-      ))}
+      {squares.map((sq, i) => {
+        const isRed = redEvery > 0 && i % redEvery === 0;
+        // `redOnly` mode: skip rendering the non-red squares entirely
+        // (used on the Murmuration landing to keep the bg lean — only the
+        // branded red Đ squares show).
+        if (redOnly && !isRed) return null;
+        const bg = isRed ? redFill(sq.a) : fill(sq.a);
+        return (
+          <div key={i} className="sq" style={{
+            left: `${sq.x}%`, top: `${sq.y}%`,
+            width: sq.s, height: sq.s,
+            background: bg,
+            transform: `translate(-50%,-50%) rotate(${sq.r}deg)`,
+            display: withDaoMark ? "flex" : undefined,
+            alignItems: withDaoMark ? "center" : undefined,
+            justifyContent: withDaoMark ? "center" : undefined,
+          }}>
+            {withDaoMark && (
+              <div aria-hidden="true" style={{
+                width: "55%",
+                height: "55%",
+                background: isRed ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.32)",
+                WebkitMaskImage: "url(/assets/thedao-d-mark.png)",
+                maskImage: "url(/assets/thedao-d-mark.png)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                pointerEvents: "none",
+                userSelect: "none",
+              }} />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -375,7 +417,7 @@ function SevTag({ s }) {
   };
   const c = map[s];
   return (
-    <span className="font-mono" style={{
+    <span className={`font-mono sev-tag sev-${s}`} style={{
       fontSize: 10, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
       padding: "3px 7px", borderRadius: 4, background: c.bg, color: c.fg,
     }}>{s}</span>
@@ -535,60 +577,84 @@ function _LiveHolders({ token }) {
     const short = (a) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "?");
 
     return (
-      <div style={{ marginTop: 12, borderTop: "1px solid var(--dao-stroke-2)", paddingTop: 12 }}>
+      <div style={{ marginTop: 12, borderTop: "1px solid var(--stroke-line-2)", paddingTop: 14 }}>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
+          onMouseEnter={(e) => { e.currentTarget.style.background = "rgb(46,105,154)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.40)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "var(--surface-card)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.30)"; }}
           style={{
-            background: "transparent", border: "none", cursor: "pointer",
-            color: "var(--dao-blue-800)", fontSize: 12, fontWeight: 600,
-            padding: 0, display: "flex", alignItems: "center", gap: 6,
+            background: "var(--surface-card)",
+            border: "1px solid rgba(255,255,255,0.30)",
+            borderRadius: 999,
+            cursor: "pointer",
+            color: "var(--text-primary)",
+            fontSize: 13, fontWeight: 700, letterSpacing: "0.02em",
+            padding: "10px 16px",
+            display: "inline-flex", alignItems: "center", gap: 10,
+            transition: "background .15s, border-color .15s",
           }}
         >
-          <span>{open ? "▾" : "▸"}</span>
-          <span>Verify signed ballots ({ballots.length || "fetch on open"})</span>
+          <span>Verify signed ballots</span>
+          <span style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase",
+            padding: "3px 9px", borderRadius: 999,
+            background: "var(--dao-red)", color: "white",
+          }}>{ballots.length || "fetch on open"}</span>
+          <span style={{ fontSize: 11, opacity: 0.85, marginLeft: 2 }}>{open ? "▾" : "▸"}</span>
         </button>
         {open && (
-          <div style={{ marginTop: 10, fontSize: 12 }}>
-            {loading && <div style={{ color: "rgba(11,11,11,0.55)" }}>Re-verifying signatures locally…</div>}
+          <div style={{ marginTop: 14, fontSize: 12, background: "var(--surface-card)", borderRadius: 12, border: "1px solid var(--stroke-line-2)", padding: 18 }}>
+            {loading && <div style={{ color: "var(--text-muted)" }}>Re-verifying signatures locally…</div>}
             {!loading && ballots.length === 0 && (
-              <div style={{ color: "rgba(11,11,11,0.55)" }}>No signed ballots yet for this round.</div>
+              <div style={{ color: "var(--text-muted)" }}>No signed ballots yet for this round.</div>
             )}
             {!loading && ballots.length > 0 && (
               <>
-                <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.62)", marginBottom: 8 }}>
-                  {okCount}/{ballots.length} signatures verified locally · {totalCreditsUsed} total credits used · run by your browser, not our server
+                {/* Summary line above the table */}
+                <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "rgba(92,183,90,0.16)", color: "var(--dao-green)", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em" }}>
+                    ✓ {okCount}/{ballots.length} verified
+                  </span>
+                  <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                    {totalCreditsUsed} credits used
+                  </span>
+                  <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                    Run in your browser, not on our server
+                  </span>
                 </div>
                 <div style={{
                   display: "grid",
-                  gridTemplateColumns: "100px 1fr 1fr 60px",
-                  gap: 6,
+                  gridTemplateColumns: "110px 1fr 1fr 56px",
+                  gap: "0 12px",
                   alignItems: "center",
                   fontFamily: "'JetBrains Mono', monospace",
+                  background: "var(--surface-elevated)",
+                  borderRadius: 8,
+                  overflow: "hidden",
                 }}>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>VOTER</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>ALLOCATION</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em" }}>SIGNED AT</div>
-                  <div style={{ fontSize: 9, color: "rgba(11,11,11,0.5)", letterSpacing: "0.08em", textAlign: "center" }}>SIG</div>
+                  {/* header */}
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>VOTER</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>ALLOCATION</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)" }}>SIGNED AT</div>
+                  <div style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.10em", fontWeight: 700, padding: "10px 12px", borderBottom: "1px solid var(--stroke-line-2)", textAlign: "center" }}>SIG</div>
                   {ballots.map((b, i) => {
                     const r = results[i];
                     const ok = r === "ok";
-                    // Human-readable allocation: "ETH: 10pt, USDC: 5pt"
-                    // instead of raw "#1:10 #2:5". Look up labels via the
-                    // global ISSUES array (populated from proposal options
-                    // on hydrate). Falls back to "#<id>" if not found.
                     const unit = round.voting === "quadratic" ? "pt" : "vt";
                     const allocStr = (b.ballot.allocations || []).map((a) => {
                       const issue = ISSUES.find((x) => x.id === Number(a.issueId));
                       const label = issue ? issue.title : ("#" + a.issueId);
                       return label + ": " + a.points + unit;
                     }).join(", ") || "—";
+                    const rowBg = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)";
+                    const rowBorder = i === ballots.length - 1 ? "none" : "1px solid var(--stroke-line-2)";
                     return (
                       <React.Fragment key={i}>
-                        <div style={{ fontSize: 11, color: "var(--dao-blue-900)", fontWeight: 600 }}>{short(b.ballot.voter)}</div>
-                        <div style={{ fontSize: 11, color: "var(--dao-blue-900)" }}>{allocStr}</div>
-                        <div style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>{new Date(b.signedAt).toLocaleString()}</div>
-                        <div style={{ textAlign: "center", fontSize: 14, color: ok ? "rgb(46,120,46)" : "var(--dao-red)", fontWeight: 700 }}>
+                        <div style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600, padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>{short(b.ballot.voter)}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "10px 12px", borderBottom: rowBorder, background: rowBg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{allocStr}</div>
+                        <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>{new Date(b.signedAt).toLocaleString()}</div>
+                        <div style={{ textAlign: "center", fontSize: 14, color: ok ? "var(--dao-green)" : "var(--dao-red)", fontWeight: 700, padding: "10px 12px", borderBottom: rowBorder, background: rowBg }}>
                           {ok ? "✓" : "✗"}
                         </div>
                       </React.Fragment>
@@ -602,20 +668,20 @@ function _LiveHolders({ token }) {
                 )}
                 {chainCommit && chainCommit.committed && (
                   <div style={{ marginTop: 12, padding: 10, background: "var(--dao-paper-2)", borderRadius: 8, border: "1px solid var(--dao-stroke-2)" }}>
-                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)", marginBottom: 6 }}>
+                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>
                       On-chain commit
                     </div>
                     {(
                       <>
                         <div style={{ fontSize: 12, marginBottom: 4 }}>
                           {chainCommit.root === browserRoot ? (
-                            <span style={{ color: "rgb(46,120,46)", fontWeight: 600 }}>✓ On-chain root matches your browser-computed root</span>
+                            <span style={{ color: "var(--dao-green)", fontWeight: 600 }}>✓ On-chain root matches your browser-computed root</span>
                           ) : (
                             <span style={{ color: "var(--dao-red)", fontWeight: 600 }}>✗ MISMATCH — chain says one thing, ballots say another</span>
                           )}
-                          <span style={{ color: "rgba(11,11,11,0.55)" }}> — {chainCommit.ballotCount} ballots committed</span>
+                          <span style={{ color: "var(--text-muted)" }}> — {chainCommit.ballotCount} ballots committed</span>
                         </div>
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", lineHeight: 1.5, wordBreak: "break-all" }}>
+                        <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", lineHeight: 1.5, wordBreak: "break-all" }}>
                           chain: {chainCommit.root}<br/>
                           local: {browserRoot}
                         </div>
@@ -623,7 +689,7 @@ function _LiveHolders({ token }) {
                           href={"https://arbiscan.io/address/" + chainCommit.contract}
                           target="_blank"
                           rel="noreferrer"
-                          style={{ fontSize: 11, color: "var(--dao-blue-800)", marginTop: 4, display: "inline-block" }}
+                          style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4, display: "inline-block" }}
                         >Verify on Arbiscan ↗</a>
                       </>
                     )}
@@ -653,7 +719,7 @@ function _LiveHolders({ token }) {
   // gates are driven by `role`.
   const ROLE_LABEL = {
     visitor:    "Visitor",
-    badgeholder:"Badgeholder",
+    badgeholder:"Badge holder",
     admin:      "Admin",
   };
 
@@ -663,24 +729,133 @@ function _LiveHolders({ token }) {
 
   // ── Top chrome ───────────────────────────────────────────────────
   function F2Chrome({ active, onNav, role, onDisconnect, onConnectClick, connected, children }) {
+    // Submit tab intentionally omitted — issues are added from inside the
+    // vote ("+ Add issue") and that route already pre-targets the current
+    // round, so a standalone Submit tab is redundant noise.
     const items = [
       ["rounds",  "Votes"],
-      ["submit",  "Submit",   canSubmit(role)],
       ["ballot",  "My ballot",canVote(role)],
       ["admin",   "Admin",    canAdmin(role)],
     ].filter(x => x[2] !== false);
+    // Đ-flock wallpaper — centroid-based clustering for a real
+    // murmuration feel (dense cores, thinning at the edges). Each
+    // centroid spawns squares around itself with distance-based size +
+    // alpha falloff.
+    //
+    // Safe zones (squares NEVER appear here):
+    //   - LEFT column (x < 32, y ∈ [8, 80]): covers vote-detail sidebar
+    //     (title, donut, info card, ✓ Murmur on file, X murmurs remaining,
+    //     ⚠️ "Your vote was invalidated" alert) AND every page's top-left
+    //     heading + subtitle ("Votes", "My ballot", "Manage votes").
+    //   - TOP-RIGHT band (x ∈ [32, 97], y < 26): covers right-side page
+    //     headings ("What's on the ballot"), the red ETHSecurity-badge
+    //     alert banner, AND the top-right action buttons ("+ Add a
+    //     direction", "+ New vote").
+    //   - SECONDARY left-heading band (x < 32, y ∈ [34, 48]): covers
+    //     the "Past votes" heading on the rounds-list screen.
+    // Card-backed content (option cards, info boxes, past-vote cards)
+    // has solid backgrounds that occlude anything behind them, so we
+    // don't need to exclude those regions.
+    const _appDaoSquares = (() => {
+      const rand = (i) => {
+        const v = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+        return v - Math.floor(v);
+      };
+      // Centroids placed in the safe-to-flock zones: bottom band,
+      // mid-right (behind cards but the cards occlude), far-right
+      // corner. Top-corners removed — they always overlapped headings.
+      const centroids = [
+        { cx: 70, cy: 80, r: 22 },   // big bottom-right cloud (primary)
+        { cx: 92, cy: 55, r: 12 },   // right edge mid
+        { cx: 16, cy: 90, r: 12 },   // bottom-left tip
+        { cx: 50, cy: 90, r: 18 },   // bottom-center cloud
+        { cx: 60, cy: 60, r: 18 },   // mid-right (occluded by cards)
+      ];
+      const inSafeZone = (x, y) =>
+        // Left column + sidebar
+        (x < 32 && y >= 8 && y <= 80) ||
+        // Top-right band (heading, alert, action buttons)
+        (x >= 32 && x <= 97 && y < 26) ||
+        // "Past votes" heading on /votes
+        (x < 32 && y >= 34 && y <= 48);
+      const out = [];
+      let i = 0;
+      let centroidIdx = 0;
+      while (out.length < 180 && i < 20000) {
+        i++;
+        const c = centroids[centroidIdx % centroids.length];
+        centroidIdx++;
+        const u1 = rand(i * 3), u2 = rand(i * 5), u3 = rand(i * 7);
+        const u4 = rand(i * 11), u5 = rand(i * 13), u6 = rand(i * 17);
+        const dx = ((u1 + u2 + u3) - 1.5) * 2 * c.r;
+        const dy = ((u4 + u5 + u6) - 1.5) * 2 * c.r;
+        const x = c.cx + dx;
+        const y = c.cy + dy;
+        if (x < 1 || x > 99 || y < 6 || y > 96) continue;
+        if (inSafeZone(x, y)) continue;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const falloff = Math.max(0, 1 - dist / (c.r * 1.4));
+        const sz = 18 + Math.floor(falloff * 60 + rand(i * 19) * 20);
+        const alpha = 0.04 + falloff * 0.08;
+        out.push({
+          top: y.toFixed(2) + "%",
+          left: x.toFixed(2) + "%",
+          size: sz,
+          rot: Math.floor(rand(i * 23) * 50) - 25,
+          a: +alpha.toFixed(3),
+        });
+      }
+      return out;
+    })();
     return (
-      <div style={{ width: "100%", height: "100%", background: "var(--dao-paper)", display: "flex", flexDirection: "column" }}>
+      <div className="dark-app" style={{ width: "100%", height: "100%", background: "var(--surface-app)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+        {/* Đ-flock layer — sits behind header + content. Header has its
+            own opaque bg + zIndex 10 so it occludes any squares that
+            land near the top. Content cards have opaque bg too. The
+            squares only "show" in the empty padding of the left rail. */}
+        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+          {_appDaoSquares.map((sq, i) => (
+            <div key={i} style={{
+              position: "absolute",
+              top: sq.top,
+              left: sq.left,
+              width: sq.size,
+              height: sq.size,
+              background: `rgba(255,60,56,${sq.a})`,
+              transform: `translate(-50%,-50%) rotate(${sq.rot}deg)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: 4,
+              userSelect: "none",
+            }}>
+              <div style={{
+                width: "55%",
+                height: "55%",
+                background: "rgba(255,255,255,0.55)",
+                WebkitMaskImage: "url(/assets/thedao-d-mark.png)",
+                maskImage: "url(/assets/thedao-d-mark.png)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+              }} />
+            </div>
+          ))}
+        </div>
         <div style={{
           padding: "18px 40px",
           display: "flex", alignItems: "center", justifyContent: "space-between",
-          borderBottom: "1px solid var(--dao-stroke-2)",
-          background: "white",
+          borderBottom: "1px solid var(--stroke-line)",
+          background: "var(--surface-elevated)",
           flexShrink: 0,
+          position: "relative",
           zIndex: 10,
         }}>
           <div onClick={() => onNav("rounds")} style={{ cursor: "pointer" }}>
-            <Wordmark />
+            <Wordmark size={44} light />
           </div>
           <div style={{ display: "flex", gap: 4 }}>
             {items.map(([k, l]) => (
@@ -702,7 +877,7 @@ function _LiveHolders({ token }) {
             )}
           </div>
         </div>
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: "auto", position: "relative", zIndex: 1 }}>
           {children}
         </div>
       </div>
@@ -716,7 +891,7 @@ function _LiveHolders({ token }) {
       admin:      { bg: "rgba(255,60,56,0.12)",    fg: "var(--dao-red-dim)",  dot: "var(--dao-red)" },
     }[role];
     return (
-      <span className="font-mono" style={{
+      <span className={`font-mono role-chip role-${role}`} style={{
         display: "inline-flex", alignItems: "center", gap: 6,
         padding: "4px 10px", borderRadius: 999,
         background: palette.bg, color: palette.fg,
@@ -858,204 +1033,131 @@ function _LiveHolders({ token }) {
   // registry + admin set. The UI shows a single "Connect Wallet" button
   // (RainbowKit-style modal under the hood — all popular wallets supported).
   function F2Connect({ onConnect, onConnectClick }) {
-    const [showModal, setShowModal] = useState(false);
-    const [connecting, setConnecting] = useState(null); // wallet id while "connecting"
-    const [showAll, setShowAll] = useState(false);
-
-    // Faux "installed" detection — in prod this comes from EIP-6963
-    // wallet announcements + window.ethereum providers. Here we mock a
-    // plausible setup: user has Rabby and MetaMask installed.
-    const installed = ["rabby", "metamask"];
-
-    // Recommended (the classic RainbowKit short list — these always show)
-    const recommended = [
-      { id: "rainbow",       name: "Rainbow" },
-      { id: "coinbase",      name: "Coinbase Wallet" },
-      { id: "metamask",      name: "MetaMask" },
-      { id: "walletconnect", name: "WalletConnect" },
-    ];
-
-    // The long tail — surfaced behind "More wallets"
-    const more = [
-      { id: "rabby",   name: "Rabby Wallet" },
-      { id: "zerion",  name: "Zerion" },
-      { id: "frame",   name: "Frame" },
-      { id: "trust",   name: "Trust Wallet" },
-      { id: "ledger",  name: "Ledger" },
-      { id: "safe",    name: "Safe" },
-      { id: "phantom", name: "Phantom" },
-      { id: "browser", name: "Browser Wallet" },
-    ];
-
-    // Build the rendered list:
-    //  1. Installed wallets pinned to the top (with "Installed" tag)
-    //  2. Recommended set (excluding any already shown as installed)
-    //  3. More wallets (only if user clicks "More wallets")
-    const allKnown = [...recommended, ...more];
-    const installedRows = installed.map(id => allKnown.find(w => w.id === id)).filter(Boolean);
-    const recommendedRows = recommended.filter(w => !installed.includes(w.id));
-    const moreRows = more.filter(w => !installed.includes(w.id));
-
-    function handlePick(w) {
-      setConnecting(w.id);
-      // Mock: prototype lands as admin so all screens are reachable.
-      // In prod this is `useAccount() + isBadgeholder(addr) + isAdmin(addr)`.
-      setTimeout(() => onConnect("admin"), 650);
-    }
-
-    const Row = ({ w, tag }) => (
-      <button
-        onClick={() => handlePick(w)}
-        disabled={!!connecting}
-        style={{
-          display: "flex", alignItems: "center", gap: 12,
-          padding: "10px 12px", borderRadius: 12,
-          background: connecting === w.id ? "var(--dao-paper-2)" : "transparent",
-          border: "none", cursor: connecting ? "default" : "pointer",
-          textAlign: "left",
-          opacity: connecting && connecting !== w.id ? 0.4 : 1,
-          transition: "background .12s",
-        }}
-        onMouseEnter={e => { if (!connecting) e.currentTarget.style.background = "var(--dao-paper-2)"; }}
-        onMouseLeave={e => { if (!connecting) e.currentTarget.style.background = "transparent"; }}
-      >
-        <WalletLogo id={w.id} />
-        <div className="font-display" style={{ fontSize: 15, fontWeight: 600, flex: 1, color: "var(--dao-blue-900)" }}>{w.name}</div>
-        {tag && (
-          <span className="font-mono" style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.08em", padding: "3px 7px", borderRadius: 4, background: "rgba(18,255,128,0.16)", color: "rgb(8,120,52)" }}>{tag}</span>
-        )}
-        {connecting === w.id ? (
-          <span className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>Connecting…</span>
-        ) : !tag && (
-          <span style={{ fontSize: 14, color: "rgba(11,11,11,0.35)" }}>›</span>
-        )}
-      </button>
-    );
-
+    // 200 TheDAO Đ squares — one for every ETHSecurity Badge holder in the
+    // flock. Generated deterministically (seeded) so the arrangement is
+    // stable across renders. Avoids overlapping the Murmuration logo
+    // (top-left) and the hero text block (mid-bottom-left). Sizes weighted
+    // toward small (squared rng) so the bg reads as a true swarm with a
+    // few larger "anchor" squares.
+    const _daoSquares = (() => {
+      const rand = (i) => {
+        const v = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+        return v - Math.floor(v);
+      };
+      const out = [];
+      // Forbidden zones (panel-relative %) — sized to the actual visible
+      // bounds of the logo + wordmark and the hero text block, with a small
+      // breathing-room buffer. The "Murmuration" wordmark extends to ~x=42%
+      // so the logo zone has to cover that, not just the bird icon. Hero
+      // text block (eyebrow + headline + subtitle) reaches x≈55%, y from
+      // ~44% to bottom.
+      //   Logo + wordmark + buffer:  x in [0, 47], y in [0, 22]
+      //   Hero text block + buffer:  x in [0, 58], y in [40, 100]
+      const inForbidden = (x, y) =>
+        (x < 43 && y < 19) || (x < 54 && y >= 43 && y <= 100);
+      let i = 0;
+      while (out.length < 200 && i < 6000) {
+        i++;
+        // 75% right side, 25% left/center stragglers — uniform spread within
+        // each zone so the flock fills the panel evenly, not clumped.
+        const bias = rand(i * 2);
+        const x = bias < 0.75
+          ? 50 + rand(i * 3) * 50      // right half
+          : 8 + rand(i * 5) * 47;      // left/center stragglers
+        const y = 2 + rand(i * 7) * 96;
+        if (inForbidden(x, y)) continue;
+        const r = rand(i * 11);
+        // Bigger sizes for clearer flock: most 18-36px, anchors up to ~80px
+        const sz = 16 + Math.floor(r * r * 70);
+        const alpha = 0.08 + (1 - r) * 0.06;
+        out.push({
+          top: y.toFixed(2) + "%",
+          left: x.toFixed(2) + "%",
+          size: sz,
+          rot: Math.floor(rand(i * 13) * 44) - 22,
+          a: +alpha.toFixed(3),
+        });
+      }
+      return out;
+    })();
     return (
       <div style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: "1.1fr 1fr", position: "relative" }}>
-        <div className="dao-blue-surface" style={{ position: "relative" }}>
-          <SquaresBackdrop density={22} tint="light" />
+        <div className="dao-blue-surface" style={{ position: "relative", overflow: "hidden" }}>
+          {/* Hand-placed red Đ squares — TheDAO brand wallpaper */}
+          {_daoSquares.map((sq, i) => (
+            <div
+              key={i}
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                top: sq.top,
+                left: sq.left,
+                width: sq.size,
+                height: sq.size,
+                background: `rgba(255,60,56,${sq.a})`,
+                transform: `translate(-50%,-50%) rotate(${sq.rot}deg)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1,
+                pointerEvents: "none",
+                userSelect: "none",
+                borderRadius: 4,
+              }}
+            >
+              <div style={{
+                width: "55%",
+                height: "55%",
+                background: "rgba(255,255,255,0.55)",
+                WebkitMaskImage: "url(/assets/thedao-d-mark.png)",
+                maskImage: "url(/assets/thedao-d-mark.png)",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+              }} />
+            </div>
+          ))}
           <div style={{ position: "absolute", inset: 40, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "white", zIndex: 2 }}>
-            <Wordmark light />
+            <Wordmark light size={68} />
             <div>
-              <div className="font-mono" style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dao-gold-300)", marginBottom: 14 }}>theDAO/log</div>
+              <div className="font-mono" style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dao-gold-300)", marginBottom: 14 }}>Murmuration ·{"  "}theDAO's DAO</div>
               <div className="font-display" style={{ fontSize: 60, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: "white" }}>
-                200 experts.<br/>One signal.<br/><span style={{ color: "var(--dao-gold-300)" }}>ETH Security.</span>
+                200 experts.<br/>Murmuring<br/><span style={{ color: "var(--dao-gold-300)" }}>To one direction</span>
               </div>
               <div className="font-body" style={{ fontSize: 16, color: "rgba(255,255,255,0.72)", marginTop: 24, maxWidth: 480, lineHeight: 1.6 }}>
-                TheDAO badgeholders allocate points across security issues that matter most. Anyone can connect to see the votes and only badgeholders can vote and propose options.
+                TheDAO's ETHSecurity Badge holders coordinate with Murmurations. Murmurs are opportunities where TheDAO's elite group of Ethereum security experts can signal the direction they want TheDAO to go. Anyone can watch the murmurs but only Badge holders can participate in murmurs and propose directions.
               </div>
             </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60, background: "var(--dao-blue-950)" }}>
           <div style={{ width: 460, color: "white" }}>
-            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "rgba(255,255,255,0.6)", textTransform: "uppercase" }}>Sign in</div>
-            <div className="font-display" style={{ fontSize: 36, fontWeight: 700, marginTop: 6 }}>Sign in to theDAO/log</div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", color: "rgba(255,255,255,0.6)", textTransform: "uppercase" }}>Welcome</div>
+            <div className="font-display" style={{ fontSize: 36, fontWeight: 700, marginTop: 6 }}>Welcome Starling</div>
             <div className="font-body" style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", marginTop: 8, lineHeight: 1.6 }}>
-              Check what Ethereum's top security experts are reviewing. Badgeholder addresses unlock voting + submission.
+              Check what Ethereum's top security experts are reviewing. ETHSecurity Badge holder addresses unlock voting + submission.
             </div>
 
             <div style={{ marginTop: 32 }}>
               <button
                 className="btn btn-primary btn-lg"
                 style={{ justifyContent: "center", width: "100%", fontSize: 16, padding: "16px 24px" }}
-                onClick={() => onConnectClick && onConnectClick()}
+                onClick={() => onConnect && onConnect()}
               >
-                Connect Wallet
+                Enter the murmuration
               </button>
             </div>
 
             <div style={{ height: 1, background: "rgba(255,255,255,0.1)", marginTop: 22 }} />
 
             <div className="font-mono" style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 18, lineHeight: 1.6 }}>
-              Don't hold a badge? You'll land in read-only mode and can still browse every round and see how votes were cast.
+              Don't hold a badge? You'll land in read-only mode and can still browse every murmuration and see how the ETHSecurity experts voted.
             </div>
           </div>
         </div>
-
-        {/* RainbowKit-style wallet modal */}
-        {showModal && (
-          <div
-            onClick={() => !connecting && setShowModal(false)}
-            style={{
-              position: "absolute", inset: 0, zIndex: 50,
-              background: "rgba(6,12,22,0.72)",
-              backdropFilter: "blur(8px)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              animation: "f2fadein .18s ease",
-            }}
-          >
-            <div
-              onClick={e => e.stopPropagation()}
-              style={{
-                width: 420, maxHeight: "85%", overflow: "hidden",
-                background: "white", borderRadius: 22,
-                boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)",
-                color: "var(--dao-blue-900)",
-                animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
-                display: "flex", flexDirection: "column",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 20px", borderBottom: "1px solid var(--dao-stroke-2)" }}>
-                <div className="font-display" style={{ fontSize: 17, fontWeight: 700 }}>Connect a Wallet</div>
-                <button
-                  onClick={() => !connecting && setShowModal(false)}
-                  style={{ width: 28, height: 28, borderRadius: 999, border: "none", background: "var(--dao-paper-2)", color: "var(--dao-blue-900)", fontSize: 14, cursor: connecting ? "not-allowed" : "pointer", display: "grid", placeItems: "center" }}
-                  aria-label="Close"
-                >×</button>
-              </div>
-              <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4, overflowY: "auto" }}>
-                {installedRows.length > 0 && (
-                  <>
-                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.45)", padding: "10px 10px 4px" }}>Installed</div>
-                    {installedRows.map(w => <Row key={w.id} w={w} tag="INSTALLED" />)}
-                  </>
-                )}
-                {recommendedRows.length > 0 && (
-                  <>
-                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.45)", padding: "10px 10px 4px" }}>Popular</div>
-                    {recommendedRows.map(w => <Row key={w.id} w={w} />)}
-                  </>
-                )}
-                {showAll && (
-                  <>
-                    <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.45)", padding: "10px 10px 4px" }}>More wallets</div>
-                    {moreRows.map(w => <Row key={w.id} w={w} />)}
-                  </>
-                )}
-                {!showAll && (
-                  <button
-                    onClick={() => setShowAll(true)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 12,
-                      padding: "10px 12px", marginTop: 6, borderRadius: 12,
-                      background: "transparent", border: "none",
-                      cursor: "pointer", textAlign: "left",
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = "var(--dao-paper-2)"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                  >
-                    <div style={{
-                      width: 36, height: 36, borderRadius: 10,
-                      background: "var(--dao-paper-2)",
-                      display: "grid", placeItems: "center",
-                      flexShrink: 0,
-                      color: "var(--dao-blue-900)", fontSize: 18, fontWeight: 700,
-                    }}>···</div>
-                    <div className="font-display" style={{ fontSize: 15, fontWeight: 600, flex: 1, color: "var(--dao-blue-900)" }}>More wallets</div>
-                    <span style={{ fontSize: 14, color: "rgba(11,11,11,0.35)" }}>›</span>
-                  </button>
-                )}
-              </div>
-              <div style={{ padding: "14px 20px", borderTop: "1px solid var(--dao-stroke-2)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>New to Ethereum wallets?</span>
-                <a href="#" className="font-display" style={{ fontSize: 12, fontWeight: 600, color: "var(--dao-red)", textDecoration: "none" }}>Learn more →</a>
-              </div>
-            </div>
-          </div>
-        )}
 
         <style>{`
           @keyframes f2fadein { from { opacity: 0 } to { opacity: 1 } }
@@ -1074,10 +1176,10 @@ function _LiveHolders({ token }) {
       <div style={{ padding: "40px 40px 80px", maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 28 }}>
           <div>
-            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>Active votes</div>
-            <div className="font-display" style={{ fontSize: 56, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>Votes</div>
-            <div className="font-body" style={{ fontSize: 16, color: "rgba(11,11,11,0.62)", marginTop: 8, maxWidth: 640 }}>
-              {open.length} vote{open.length === 1 ? "" : "s"} open right now. {role === "visitor" ? "Connect a badgeholder wallet to participate." : null}
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>Active votes</div>
+            <div className="font-display" style={{ fontSize: 56, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>Votes</div>
+            <div className="font-body" style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 8, maxWidth: 640 }}>
+              {open.length} vote{open.length === 1 ? "" : "s"} open right now. {role === "visitor" ? "Connect a wallet that holds an ETHSecurity Badge to participate." : null}
             </div>
           </div>
           {canAdmin(role) && (
@@ -1085,13 +1187,45 @@ function _LiveHolders({ token }) {
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
-          {open.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} />)}
-        </div>
+        {open.length > 0 ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
+            {open.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} />)}
+          </div>
+        ) : closed.length === 0 ? (
+          // Totally empty — first-load / quiet period. Mascot says hi.
+          <div style={{ textAlign: "center", padding: "32px 20px 16px" }}>
+            <img
+              src="/assets/murmuration-starling.png"
+              alt="Murmuration mascot"
+              style={{ width: 200, height: "auto", opacity: 0.92, userSelect: "none", pointerEvents: "none" }}
+            />
+            <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 20 }}>
+              The flock is quiet
+            </div>
+            <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
+              No votes are open right now. Check back when an admin publishes one{canAdmin(role) ? ", or start one yourself" : ""}.
+            </div>
+          </div>
+        ) : (
+          // Past votes exist but nothing currently open — show a small note above the past section.
+          <div style={{ padding: "20px 24px", background: "var(--dao-paper-2)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 12, display: "flex", alignItems: "center", gap: 16 }}>
+            <img
+              src="/assets/murmuration-starling.png"
+              alt=""
+              style={{ width: 72, height: "auto", opacity: 0.9, userSelect: "none", pointerEvents: "none", flexShrink: 0 }}
+            />
+            <div>
+              <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "var(--text-primary)" }}>The flock is resting</div>
+              <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                No active votes.
+              </div>
+            </div>
+          </div>
+        )}
 
         {closed.length > 0 && (
           <>
-            <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--dao-blue-900)", marginTop: 56, marginBottom: 16 }}>Past votes</div>
+            <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)", marginTop: 56, marginBottom: 16 }}>Past votes</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
               {closed.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} muted />)}
             </div>
@@ -1110,34 +1244,36 @@ function _LiveHolders({ token }) {
     const accent = accentMap[r.accent] || "var(--dao-red)";
     return (
       <div onClick={onOpen} style={{
-        background: "white",
+        // Muted (past) votes use the deeper recessed surface instead of
+        // a translucent overlay — opacity < 1 would let the Đ-flock
+        // wallpaper show through the card content.
+        background: muted ? "var(--surface-elevated)" : "var(--surface-card)",
         borderRadius: 16,
-        border: "1px solid var(--dao-stroke-2)",
-        padding: 24,
+        border: "1px solid var(--stroke-line-2)",
+        padding: 28,
         cursor: "pointer",
         position: "relative",
         overflow: "hidden",
-        opacity: muted ? 0.72 : 1,
         transition: "transform .15s, box-shadow .15s",
       }}
-      onMouseEnter={e => { if (!muted) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 12px 36px rgba(20,46,74,0.12)"; } }}
+      onMouseEnter={e => { if (!muted) { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 16px 44px rgba(0,0,0,0.28)"; } }}
       onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = ""; }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent }} />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5, background: accent }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginTop: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="font-mono" style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
-              padding: "3px 7px", borderRadius: 4,
-              background: r.status === "open" ? "rgba(82,168,82,0.14)" : "rgba(120,120,120,0.12)",
-              color: r.status === "open" ? "rgb(46,120,46)" : "rgba(11,11,11,0.6)",
+              fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
+              padding: "4px 9px", borderRadius: 4,
+              background: r.status === "open" ? "rgba(92,183,90,0.16)" : "rgba(255,255,255,0.08)",
+              color: r.status === "open" ? "var(--dao-green)" : "var(--text-muted)",
             }}>● {r.status}</span>
-            {r.rolling && <span className="font-mono" style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "3px 7px", borderRadius: 4, background: "rgba(40,86,122,0.10)", color: "var(--dao-blue-800)" }}>Always open</span>}
+            {r.rolling && <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 4, background: "rgba(108,162,204,0.18)", color: "rgb(180,220,255)" }}>Always open</span>}
           </div>
-          <span className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>{r.voters} voted</span>
+          <span className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", letterSpacing: "0.04em" }}>{r.voters} voted</span>
         </div>
-        <div className="font-display" style={{ fontSize: 22, fontWeight: 700, color: "var(--dao-blue-900)", marginTop: 14, lineHeight: 1.25 }}>{r.title}</div>
-        <div className="font-body" style={{ fontSize: 14, color: "rgba(11,11,11,0.62)", marginTop: 6, lineHeight: 1.55 }}>{r.blurb}</div>
-        <div style={{ display: "flex", gap: 18, marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--dao-stroke-2)" }}>
+        <div className="font-display" style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginTop: 18, lineHeight: 1.22, letterSpacing: "-0.01em" }}>{r.title}</div>
+        <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.55 }}>{r.blurb}</div>
+        <div style={{ display: "flex", gap: 22, marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--stroke-line-2)" }}>
           <Stat label="Voting" value={r.voting === "quadratic" ? "Quadratic" : "Token-weight"} />
           <Stat label="Budget" value={`${r.budget} ${r.voting === "quadratic" ? "pts" : "votes"}`} />
           <Stat label="Issues" value={r.issueIds.length} />
@@ -1150,8 +1286,8 @@ function _LiveHolders({ token }) {
   function Stat({ label, value }) {
     return (
       <div>
-        <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.5)" }}>{label}</div>
-        <div className="font-display" style={{ fontSize: 14, fontWeight: 600, color: "var(--dao-blue-900)", marginTop: 2 }}>{value}</div>
+        <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>{label}</div>
+        <div className="font-display" style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", marginTop: 4, letterSpacing: "-0.01em" }}>{value}</div>
       </div>
     );
   }
@@ -1169,14 +1305,14 @@ function _LiveHolders({ token }) {
             transform="rotate(-90 100 100)" strokeLinecap="round" style={{ transition: "stroke-dashoffset .25s" }} />
         </svg>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <div className="font-display" style={{ fontSize: 48, fontWeight: 700, color: "var(--dao-blue-900)", lineHeight: 1 }}>{used}</div>
-          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)", marginTop: 4 }}>of {total} {label}</div>
+          <div className="font-display" style={{ fontSize: 48, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>{used}</div>
+          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginTop: 4 }}>of {total} {label}</div>
         </div>
       </div>
     );
   }
 
-  function AllocSlider({ value, onChange, max, scaleMax, disabled }) {
+  function AllocSlider({ value, onChange, max, scaleMax, disabled, voting }) {
     // `max` = highest value user can currently set (affordability cap).
     // `scaleMax` = visual ceiling for the round (e.g. 10 for QV/100 budget,
     // 100 for token-weight). Bar fill = value/scaleMax, so two sliders with
@@ -1220,6 +1356,10 @@ function _LiveHolders({ token }) {
       };
     }, [dragging, safeMax, safeScale]);
 
+    // Cost in credits — used in the drag bubble so the user sees the
+    // quadratic curve as they slide. Token-weight votes don't have a
+    // curve so the bubble just echoes the value.
+    const _displayCost = voting === "quadratic" ? clampedValue * clampedValue : clampedValue;
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 12, width: 260 }}>
         <div
@@ -1229,7 +1369,7 @@ function _LiveHolders({ token }) {
           style={{
             flex: 1,
             position: "relative",
-            height: 22,
+            height: 32,
             cursor: disabled ? "not-allowed" : "pointer",
             display: "flex",
             alignItems: "center",
@@ -1238,13 +1378,13 @@ function _LiveHolders({ token }) {
           {/* base track (full scale) */}
           <div style={{
             position: "absolute", left: 0, right: 0, height: 6,
-            background: "var(--dao-paper-2)", borderRadius: 3,
+            background: "rgba(255,255,255,0.10)", borderRadius: 3,
           }} />
           {/* affordable zone (lighter than fill, darker than unaffordable) */}
           <div style={{
             position: "absolute", left: 0, height: 6,
             width: `${affordablePct}%`,
-            background: "rgba(255,60,56,0.14)", borderRadius: 3,
+            background: "rgba(255,60,56,0.18)", borderRadius: 3,
           }} />
           {/* fill */}
           <div style={{
@@ -1256,22 +1396,53 @@ function _LiveHolders({ token }) {
           {/* affordable boundary marker (only shown when there's an unaffordable zone) */}
           {affordablePct < 100 && (
             <div style={{
-              position: "absolute", left: `${affordablePct}%`, top: 4, height: 14,
-              width: 1, background: "rgba(11,11,11,0.18)",
+              position: "absolute", left: `${affordablePct}%`, top: 9, height: 14,
+              width: 1, background: "var(--stroke-line-2)",
               transform: "translateX(-0.5px)",
             }} />
+          )}
+          {/* floating value bubble — only on drag */}
+          {dragging && !disabled && (
+            <div style={{
+              position: "absolute",
+              left: `${fillPct}%`,
+              transform: "translate(-50%, -100%)",
+              top: -4,
+              padding: "6px 10px",
+              borderRadius: 8,
+              background: "var(--dao-red)",
+              color: "white",
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 12,
+              fontWeight: 700,
+              letterSpacing: "0.02em",
+              whiteSpace: "nowrap",
+              boxShadow: "0 6px 18px rgba(255,60,56,0.35)",
+              pointerEvents: "none",
+              zIndex: 5,
+            }}>
+              {clampedValue} {voting === "quadratic" ? "pts" : "votes"}
+              {voting === "quadratic" && <span style={{ opacity: 0.78, marginLeft: 6 }}>· {_displayCost} cr</span>}
+              <div style={{
+                position: "absolute",
+                left: "50%", bottom: -4,
+                width: 8, height: 8,
+                background: "var(--dao-red)",
+                transform: "translateX(-50%) rotate(45deg)",
+              }} />
+            </div>
           )}
           {/* thumb */}
           <div style={{
             position: "absolute", left: `${fillPct}%`,
-            width: 16, height: 16,
+            width: dragging ? 26 : 22, height: dragging ? 26 : 22,
             transform: "translate(-50%, 0)",
-            top: 3,
-            background: "white",
-            border: "2px solid var(--dao-red)",
+            top: dragging ? 3 : 5,
+            background: "var(--surface-card)",
+            border: "3px solid var(--dao-red)",
             borderRadius: 999,
-            boxShadow: dragging ? "0 0 0 4px rgba(255,60,56,0.18)" : "0 1px 3px rgba(0,0,0,0.15)",
-            transition: dragging ? "none" : "left .15s, box-shadow .15s",
+            boxShadow: dragging ? "0 0 0 6px rgba(255,60,56,0.22)" : "0 2px 6px rgba(0,0,0,0.30)",
+            transition: dragging ? "none" : "left .15s, width .12s, height .12s, top .12s, box-shadow .15s",
             opacity: disabled ? 0.5 : 1,
           }} />
         </div>
@@ -1279,13 +1450,119 @@ function _LiveHolders({ token }) {
           width: 32, textAlign: "right",
           fontWeight: 600,
           fontSize: 14,
-          color: value > 0 ? "var(--dao-red-dim)" : "rgba(11,11,11,0.4)",
+          color: value > 0 ? "var(--dao-red-dim)" : "var(--text-faint)",
         }}>{value}</div>
       </div>
     );
   }
 
   // ── Round detail (allocate) ──────────────────────────────────────
+  // Mascot-driven empty / not-found state for /vote/<bad-id> + initial fetch flicker.
+  // Covers both "404" (route doesn't match a real vote) and the brief moment
+  // between page-load and the proposals-API hydration completing.
+  // Skeleton shown on /vote/<id> while the bulk hydrate is in flight —
+  // mimics the vote-detail layout (left sidebar + right card stack) so
+  // the user sees the page shape immediately instead of a blank
+  // navy screen + a flash of "Round not found".
+  function F2RoundSkeleton() {
+    const _bar = (w, h, mt) => (
+      <div style={{
+        width: w, height: h, marginTop: mt || 0, borderRadius: 6,
+        background: "linear-gradient(90deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.05) 100%)",
+        backgroundSize: "200% 100%",
+        animation: "f2skel 1.4s ease-in-out infinite",
+      }} />
+    );
+    const _row = (i) => (
+      <div key={i} style={{
+        background: "var(--surface-card)", borderRadius: 14,
+        border: "1px solid var(--stroke-line-2)", padding: 18,
+        display: "grid", gridTemplateColumns: "1fr auto", gap: 16,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "rgba(255,255,255,0.08)",
+          }} />
+          <div style={{ flex: 1 }}>
+            {_bar("50%", 12)}
+            {_bar("80%", 18, 10)}
+            {_bar("35%", 10, 10)}
+          </div>
+        </div>
+        <div style={{ width: 200, display: "flex", alignItems: "center" }}>
+          {_bar("100%", 8)}
+        </div>
+      </div>
+    );
+    return (
+      <>
+        <style>{"@keyframes f2skel { 0%{background-position:200% 0} 100%{background-position:-200% 0} }"}</style>
+        <div style={{ padding: "32px 40px", display: "grid", gridTemplateColumns: "320px 1fr", gap: 32, maxWidth: 1320, margin: "0 auto" }}>
+          <div>
+            {_bar("60%", 10)}
+            {_bar("90%", 28, 10)}
+            {_bar("70%", 28, 4)}
+            {_bar("80%", 12, 16)}
+            <div style={{
+              width: 200, height: 200, marginTop: 24, borderRadius: "50%",
+              border: "20px solid rgba(255,255,255,0.06)",
+            }} />
+          </div>
+          <div>
+            {_bar("40%", 36)}
+            {_bar("80%", 14, 12)}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 24 }}>
+              {[0,1,2,3].map(_row)}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  function F2RoundNotFound({ onBack }) {
+    return (
+      <div style={{ textAlign: "center", padding: "80px 24px 60px", maxWidth: 560, margin: "0 auto" }}>
+        <img
+          src="/assets/murmuration-starling.png"
+          alt="Murmuration mascot"
+          style={{ width: 220, height: "auto", opacity: 0.92, userSelect: "none", pointerEvents: "none" }}
+        />
+        <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)", marginTop: 18 }}>
+          This vote flew away
+        </div>
+        <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.55 }}>
+          We couldn't find a murmuration at that address. It may have closed, the link may be wrong, or the flock is still settling — give it a second and try again.
+        </div>
+        <button className="btn btn-primary" style={{ marginTop: 24, fontSize: 14, padding: "10px 22px" }} onClick={onBack}>
+          ← Back to all votes
+        </button>
+      </div>
+    );
+  }
+
+  // Coin picker: cycles through 5 distinct DESIGNS by option index, then
+  // randomly (but stably-per-option) picks a background variant within
+  // that design. So a vote with 4 options shows 4 different designs;
+  // a vote with 6 options shows designs 1-5 + design 1 again (repeats).
+  // Within each design, the variant is hashed from the option id so it
+  // stays the same across renders.
+  const _DESIGN_GROUPS = {
+    1: [1],
+    2: [2, 16, 17, 18, 19, 20],
+    3: [3, 11, 12, 13, 14, 15],
+    4: [4, 6, 7, 8, 9, 10],
+    5: [5],
+  };
+  function _coinFor(id, optionIndex) {
+    const designNum = (((optionIndex || 0) % 5) + 5) % 5 + 1;
+    const variants = _DESIGN_GROUPS[designNum] || [1];
+    let h = 0;
+    for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) | 0;
+    return variants[Math.abs(h) % variants.length];
+  }
+
   function F2RoundDetail({ round, allocations, setAllocations, role, onOpenIssue, onSubmit, onDeleteIssue, onCommit, address }) {
     const [_deletingIssueId, _setDeletingIssueId] = useState(null);
     const [_deletingPending, _setDeletingPending] = useState(false);
@@ -1297,6 +1574,10 @@ function _LiveHolders({ token }) {
     const [_roundTally, _setRoundTally] = useState({});
     const [_roundVoters, _setRoundVoters] = useState(0);
     const [_deletedOptionIds, _setDeletedOptionIds] = useState([]);
+    // Tick state: bumped after any mutation to the global ISSUES array so
+    // dependent renders (issues.map → cards) re-evaluate. ISSUES is a
+    // module-level mutable global; React can't observe mutations to it.
+    const [, _bumpTick] = useReducer((n) => n + 1, 0);
     // Snapshot the user's saved allocations so a "Cancel edit" can
     // restore the sliders without needing a re-fetch.
     const _hydrateAllocs = (ballot) => {
@@ -1325,18 +1606,23 @@ function _LiveHolders({ token }) {
             _setUserBallot(null);
           }
         }
-        // 2) aggregate tally + voter count + deleted option list
+        // 2) aggregate tally + voter count + deleted option list.
+        // /api/proposals/:id returns { proposal, tally, voterCount } — note
+        // options + deletedOptionIds live UNDER proposal, not at the top
+        // level. Reading them as live.options / live.deletedOptionIds (as
+        // earlier versions did) silently no-ops because both are undefined.
         const live = await votingApi.fetchProposal(round.id);
+        const liveProposal = live.proposal || {};
         _setRoundTally(live.tally || {});
         _setRoundVoters(live.voterCount || 0);
-        _setDeletedOptionIds(live.deletedOptionIds || []);
+        _setDeletedOptionIds(liveProposal.deletedOptionIds || []);
         // 3) Defensive ISSUES backfill — when /vote/<id> is a fresh
         // deep-link landing, F2App's bulk hydration may not have
         // populated ISSUES yet. Mutate the global in place so the next
         // render (triggered by the state-sets above) resolves
         // round.issueIds → cards. Without this the user sees an empty
         // Stances list until they refresh.
-        for (const opt of (live.options || [])) {
+        for (const opt of (liveProposal.options || [])) {
           if (!ISSUES.find((i) => i.id === opt.id)) {
             ISSUES.push({
               id: opt.id,
@@ -1349,6 +1635,10 @@ function _LiveHolders({ token }) {
             });
           }
         }
+        // Force a re-render so issues.map() picks up any IDs we just
+        // backfilled. ISSUES mutations don't trigger React updates on
+        // their own — the state-sets above batch with this tick.
+        _bumpTick();
       } catch (e) { /* network blip; user can refresh */ }
     };
     // Re-run when round.id, address, or the live issueIds set changes — so
@@ -1431,14 +1721,14 @@ function _LiveHolders({ token }) {
       <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 32, padding: "32px 40px", maxWidth: 1400, margin: "0 auto" }}>
         {/* sidebar */}
         <div style={{ position: "sticky", top: 88, alignSelf: "start" }}>
-          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>Your ballot</div>
-          <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--dao-blue-900)", marginTop: 4, lineHeight: 1.2 }}>{round.title}</div>
-          <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", marginTop: 6 }}>
+          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Your ballot</div>
+          <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 4, lineHeight: 1.2 }}>{round.title}</div>
+          <div className="font-body" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
             {round.voting === "quadratic" ? "Quadratic vote · Every extra point costs more" : "Token-weight vote · 1 vote = 1 credit"}
             {round.rolling ? " · Always open" : ` · Closes ${_prettyLocalClose(round.closes) || ""}`}
           </div>
           <div style={{ marginTop: 24, display: "flex", justifyContent: "center" }}>
-            <DonutBudget used={used} total={round.budget} label={round.voting === "quadratic" ? "credits" : "votes"} />
+            <DonutBudget used={used} total={round.budget} label={round.voting === "quadratic" ? "murmurs" : "votes"} />
           </div>
           <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
             {Object.entries(allocations).filter(([k, v]) => v > 0 && round.issueIds.includes(Number(k))).map(([id, v]) => {
@@ -1446,16 +1736,19 @@ function _LiveHolders({ token }) {
               if (!iss) return null;
               return (
                 <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                  <SevDot s={iss.severity} />
-                  <span className="font-body" style={{ flex: 1, color: "var(--dao-blue-900)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{iss.title}</span>
+                  <img
+                    src={"/assets/murmuration-coin-" + _coinFor(iss.id, (round.issueIds || []).indexOf(iss.id)) + ".png"}
+                    alt=""
+                    style={{ width: 18, height: 18, flexShrink: 0, userSelect: "none", pointerEvents: "none" }}
+                  />
+                  <span className="font-body" style={{ flex: 1, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{iss.title}</span>
                   <span className="font-mono" style={{ fontWeight: 600, color: "var(--dao-red-dim)" }}>{v}</span>
                 </div>
               );
             })}
           </div>
           {canVote(role) ? (
-            <>
-              <div style={{ minHeight: 150, marginTop: 4, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div style={{ minHeight: 150, marginTop: 4, display: "flex", flexDirection: "column", justifyContent: "center" }}>
               {!_userBallot ? (
                 <div key="first" style={{ animation: "f2statepop .18s ease-out" }}>
                   <button
@@ -1472,9 +1765,9 @@ function _LiveHolders({ token }) {
                 </div>
               ) : _dirty ? (
                 <div key="dirty" style={{ animation: "f2statepop .18s ease-out" }}>
-                  <div style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "10px 12px" }}>
-                    <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>● Unsaved changes</div>
-                    <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", marginTop: 3 }}>
+                  <div style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "16px 18px" }}>
+                    <div className="font-display" style={{ fontSize: 16, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>● Unsaved changes</div>
+                    <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.45 }}>
                       Re-sign to cast your new vote.
                     </div>
                   </div>
@@ -1493,48 +1786,44 @@ function _LiveHolders({ token }) {
                     type="button"
                     onClick={_revertToSaved}
                     disabled={_committing}
-                    style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--dao-blue-800)", fontSize: 12, cursor: _committing ? "default" : "pointer", padding: 4, width: "100%", textAlign: "center", textDecoration: "underline", opacity: _committing ? 0.5 : 1 }}
+                    style={{ marginTop: 8, background: "transparent", border: "none", color: "var(--text-secondary)", fontSize: 12, cursor: _committing ? "default" : "pointer", padding: 4, width: "100%", textAlign: "center", textDecoration: "underline", opacity: _committing ? 0.5 : 1 }}
                   >Revert to last signed</button>
                 </div>
               ) : _allOrphaned ? (
-                <div key="invalidated" style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "12px 14px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>⚠ Your vote was invalidated</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgb(180,115,20)", marginTop: 4 }}>
-                    ✓ {_orphanedCredits} pending credits refunded
+                <div key="invalidated" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your vote was invalidated</div>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
+                    ✓ {_orphanedCredits} pending murmurs returned to your flock
                   </div>
-                  <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.7)", marginTop: 6, lineHeight: 1.45 }}>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     Every issue you voted on was deleted. Slide to allocate again.
                   </div>
                 </div>
               ) : _hasOrphans ? (
-                <div key="partial" style={{ background: "rgba(217,140,30,0.10)", border: "1px solid rgba(217,140,30,0.45)", borderRadius: 10, padding: "12px 14px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(180,115,20)" }}>⚠ You partially voted</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgb(180,115,20)", marginTop: 4 }}>
-                    ✓ {_orphanedCredits} pending credits refunded
+                <div key="partial" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ You partially voted</div>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
+                    ✓ {_orphanedCredits} pending murmurs returned to your flock
                   </div>
-                  <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.7)", marginTop: 6, lineHeight: 1.45 }}>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     An issue you voted on was deleted. Slide to reallocate.
                   </div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.45)", marginTop: 6 }}>
+                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 10, letterSpacing: "0.06em", textTransform: "uppercase" }}>
                     Signed {_prettyLocalClose(_userBallot.signedAt)}
                   </div>
                 </div>
               ) : (
-                <div key="clean" style={{ background: "rgba(46,120,46,0.08)", border: "1px solid rgba(46,120,46,0.35)", borderRadius: 10, padding: "10px 12px", textAlign: "center", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "rgb(46,120,46)" }}>✓ Vote on file</div>
-                  <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", marginTop: 3 }}>
+                <div key="clean" style={{ background: "rgba(92,183,90,0.10)", border: "1px solid rgba(92,183,90,0.40)", borderLeft: "4px solid var(--dao-green)", borderRadius: 10, padding: "16px 18px", animation: "f2statepop .18s ease-out" }}>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "var(--dao-green)", letterSpacing: "-0.01em" }}>✓ Murmur on file</div>
+                  <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 8, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                     Signed {_prettyLocalClose(_userBallot.signedAt)}
                   </div>
                 </div>
               )}
               </div>
-              <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", textAlign: "center", marginTop: 10 }}>
-                {remaining} {round.voting === "quadratic" ? "credits" : "votes"} remaining
-              </div>
-            </>
           ) : (
-            <div style={{ marginTop: 20, padding: 14, background: "var(--dao-paper-2)", borderRadius: 10, fontSize: 12, color: "rgba(11,11,11,0.62)", lineHeight: 1.55 }}>
-              <b style={{ color: "var(--dao-blue-900)" }}>Read-only.</b> Connect a badgeholder wallet to allocate.
+            <div style={{ marginTop: 20, padding: 14, background: "var(--dao-paper-2)", borderRadius: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.55 }}>
+              <b style={{ color: "var(--text-primary)" }}>Read-only.</b> Connect a wallet that holds an ETHSecurity Badge to allocate.
             </div>
           )}
         </div>
@@ -1543,16 +1832,16 @@ function _LiveHolders({ token }) {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
             <div>
-              <div className="font-display" style={{ fontSize: 36, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em" }}>Stances in play</div>
+              <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>What's on the ballot</div>
             </div>
             {canSubmit(role) && (
-              <button className="btn btn-ghost" onClick={onSubmit}>+ Add issue</button>
+              <button className="btn btn-ghost" onClick={onSubmit}>+ Add a direction</button>
             )}
           </div>
-          <div style={{ background: "rgba(255,60,56,0.06)", border: "1px solid rgba(255,60,56,0.18)", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "var(--dao-red-dim)", marginBottom: 16, lineHeight: 1.5 }}>
+          <div style={{ background: "rgba(255,60,56,0.10)", border: "1px solid rgba(255,60,56,0.25)", borderLeft: "4px solid var(--dao-red)", borderRadius: 10, padding: "14px 18px", fontSize: 14, color: "var(--text-primary)", marginBottom: 18, lineHeight: 1.55 }}>
             Don't see the choice you want? {canSubmit(role) ? (
-              <a onClick={onSubmit} style={{ color: "var(--dao-red)", fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>create an issue here</a>
-            ) : <span style={{ fontWeight: 600 }}>connect a badgeholder wallet to add one</span>} and it'll be added to the ballot.
+              <a onClick={onSubmit} style={{ color: "var(--dao-red)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>create a direction here</a>
+            ) : <span style={{ color: "var(--dao-red)", fontWeight: 700 }}>connect a wallet that holds an ETHSecurity Badge to add one</span>} and it'll be added to the ballot.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {issues.map(iss => {
@@ -1567,24 +1856,45 @@ function _LiveHolders({ token }) {
                 : v + remaining;
               return (
                 <div key={iss.id} style={{
-                  background: "white", borderRadius: 14,
-                  border: v > 0 ? "1px solid var(--dao-red-soft)" : "1px solid var(--dao-stroke-2)",
+                  background: "var(--surface-card)", borderRadius: 14,
+                  border: "1px solid var(--stroke-line-2)",
+                  borderLeft: v > 0 ? "4px solid var(--dao-red)" : "1px solid var(--stroke-line-2)",
                   boxShadow: v > 0 ? "0 8px 24px rgba(255,60,56,0.08)" : "none",
-                  padding: 18,
+                  padding: v > 0 ? "18px 18px 18px 15px" : 18,
                   display: "grid", gridTemplateColumns: "1fr auto 150px", gap: 16,
                   alignItems: "stretch",
                   position: "relative",
-                  transition: "all .15s",
+                  transition: "transform .15s, box-shadow .15s, border-color .15s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = v > 0
+                    ? "0 14px 36px rgba(255,60,56,0.16)"
+                    : "0 10px 28px rgba(0,0,0,0.25)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = "";
+                  e.currentTarget.style.boxShadow = v > 0 ? "0 8px 24px rgba(255,60,56,0.08)" : "none";
                 }}>
-                  <div onClick={() => onOpenIssue(iss.id)} style={{ cursor: "pointer" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <SevTag s={iss.severity} />
-                      <span className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>#{iss.num} · {iss.repo}</span>
-                    </div>
-                    <div className="font-display" style={{ fontSize: 18, fontWeight: 600, color: "var(--dao-blue-900)", lineHeight: 1.3 }}>{iss.title}</div>
-                    <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 12, color: "rgba(11,11,11,0.62)", alignItems: "center", flexWrap: "wrap" }}>
-                      <span>by <b style={{ color: "var(--dao-blue-800)" }}>{iss.author}</b></span>
-                      <span>· {iss.voters} voters</span>
+                  <div onClick={() => onOpenIssue(iss.id)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 16 }}>
+                    {/* Stable per-option coin badge — cycles 1..5 by the option's
+                        position within the round so re-ordering or adding options
+                        keeps each one visually distinct without random reshuffles. */}
+                    <img
+                      src={"/assets/murmuration-coin-" + _coinFor(iss.id, (round.issueIds || []).indexOf(iss.id)) + ".png"}
+                      alt=""
+                      style={{ width: 56, height: 56, flexShrink: 0, userSelect: "none", pointerEvents: "none" }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <SevTag s={iss.severity} />
+                        <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>#{iss.num} · {iss.repo}</span>
+                      </div>
+                      <div className="font-display" style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.3 }}>{iss.title}</div>
+                      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 12, color: "var(--text-muted)", alignItems: "center", flexWrap: "wrap" }}>
+                        <span>by <b style={{ color: "var(--text-secondary)" }}>{iss.author}</b></span>
+                        <span>· {iss.voters} voters</span>
+                      </div>
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -1594,19 +1904,20 @@ function _LiveHolders({ token }) {
                       max={sliderMax}
                       scaleMax={round.voting === "quadratic" ? Math.floor(Math.sqrt(round.budget)) : round.budget}
                       disabled={!canVote(role)}
+                      voting={round.voting}
                     />
                     {round.voting === "quadratic" ? (
                       <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", textAlign: "right", lineHeight: 1.5 }}>
-                        <div style={{ color: "rgba(11,11,11,0.55)" }}>
-                          Cost: <span style={{ color: "var(--dao-red-dim)", fontWeight: 600 }}>{cost} cr</span>
+                        <div style={{ color: "var(--text-muted)" }}>
+                          Cost: <span style={{ color: "var(--dao-red-dim)", fontWeight: 600 }}>{cost} murmurs</span>
                         </div>
-                        <div style={{ color: canAffordNext ? "rgba(11,11,11,0.45)" : "rgba(11,11,11,0.3)" }}>
-                          Next vote: <span style={{ color: canAffordNext ? "var(--dao-blue-800)" : "rgba(11,11,11,0.4)", fontWeight: 600 }}>+{nextCost} cr</span>
-                          {!canAffordNext && <span style={{ marginLeft: 4, color: "rgba(11,11,11,0.35)" }}>· over budget</span>}
+                        <div style={{ color: "var(--text-muted)" }}>
+                          Next vote: <span style={{ color: canAffordNext ? "var(--text-secondary)" : "var(--text-faint)", fontWeight: 600 }}>+{nextCost} murmurs</span>
+                          {!canAffordNext && <span style={{ marginLeft: 4, color: "var(--text-faint)" }}>· over budget</span>}
                         </div>
                       </div>
                     ) : (
-                      <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                      <div className="font-mono" style={{ fontSize: 10, color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                         {v} votes
                       </div>
                     )}
@@ -1647,31 +1958,35 @@ function _LiveHolders({ token }) {
                           onClick={(e) => { e.stopPropagation(); _setDeletingIssueId(iss.id); }}
                           style={{
                             background: "transparent", border: "none", cursor: "pointer",
-                            color: "rgba(11,11,11,0.3)", fontSize: 28, lineHeight: 1,
+                            color: "var(--text-faint)", fontSize: 28, lineHeight: 1,
                             padding: "4px 12px",
                           }}
                           onMouseEnter={e => e.currentTarget.style.color = "var(--dao-red)"}
-                          onMouseLeave={e => e.currentTarget.style.color = "rgba(11,11,11,0.3)"}
+                          onMouseLeave={e => e.currentTarget.style.color = "var(--text-faint)"}
                         >×</button>
                       )}
                     </div>
                   )}
                   {(() => {
                     const total = Number(_roundTally[iss.id] || 0);
+                    // Live-leader detection: which option has the highest total
+                    // right now? Mascot perches on the leader. For rolling votes
+                    // ("always open"), this shows who's winning at any moment.
+                    const _tallyNums = Object.values(_roundTally).map(Number).filter((n) => !isNaN(n));
+                    const _maxTotal = _tallyNums.length ? Math.max(..._tallyNums) : 0;
+                    const _isLeader = _maxTotal > 0 && total === _maxTotal;
                     // delta = current slider value − the user's previously-
                     // signed value for this issue (0 if they haven't voted).
                     const prev = _userBallot
                       ? Number(((_userBallot.ballot.allocations || []).find((a) => Number(a.issueId) === Number(iss.id)) || {}).points || 0)
                       : 0;
                     const delta = (v || 0) - prev;
-                    // Only show delta when actively editing a vote OR when
-                    // a first-time voter is mid-allocation (no saved ballot
-                    // yet but they're sliding). Read-only roles never see it.
                     const showDelta = canVote(role) && delta !== 0;
                     const unit = round.voting === "quadratic" ? "pts" : (Number(total) === 1 ? "vote" : "votes");
                     return (
                       <div style={{
-                        background: "var(--dao-paper-2)",
+                        background: _isLeader ? "rgba(255,60,56,0.06)" : "var(--dao-paper-2)",
+                        border: _isLeader ? "1px solid rgba(255,60,56,0.28)" : "none",
                         borderRadius: 10,
                         padding: "14px 12px",
                         display: "flex",
@@ -1680,26 +1995,41 @@ function _LiveHolders({ token }) {
                         justifyContent: "center",
                         textAlign: "center",
                         gap: 4,
+                        position: "relative",
                       }}>
-                        <div className="font-mono" style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>
-                          TOTAL
+                        {_isLeader && (
+                          <img
+                            src="/assets/murmuration-starling.png"
+                            alt=""
+                            title="Currently leading the murmuration"
+                            style={{
+                              position: "absolute",
+                              top: -22,
+                              right: -10,
+                              width: 56,
+                              height: "auto",
+                              userSelect: "none",
+                              pointerEvents: "none",
+                              filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.18))",
+                            }}
+                          />
+                        )}
+                        <div className="font-mono" style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: _isLeader ? "var(--dao-red-dim)" : "var(--text-muted)", fontWeight: _isLeader ? 700 : 400 }}>
+                          {_isLeader ? "✦ LEADER" : "TOTAL"}
                         </div>
                         <div style={{ display: "flex", alignItems: "baseline", gap: 6, justifyContent: "center" }}>
-                          <span className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--dao-blue-900)", lineHeight: 1 }}>
+                          <span className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--text-primary)", lineHeight: 1 }}>
                             {total}
                           </span>
                           {showDelta && (
                             <span className="font-mono" style={{
                               fontSize: 14,
                               fontWeight: 700,
-                              color: delta > 0 ? "rgb(46,120,46)" : "var(--dao-red)",
+                              color: delta > 0 ? "var(--dao-green)" : "var(--dao-red)",
                             }}>
                               {delta > 0 ? "+" : "−"}{Math.abs(delta)}
                             </span>
                           )}
-                        </div>
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgba(11,11,11,0.55)" }}>
-                          {unit} · {_roundVoters} voter{_roundVoters === 1 ? "" : "s"}
                         </div>
                       </div>
                     );
@@ -1719,25 +2049,22 @@ function _LiveHolders({ token }) {
     const v = allocations[issue.id] || 0;
     return (
       <div style={{ padding: "32px 40px", maxWidth: 1100, margin: "0 auto" }}>
-        <a onClick={onBack} className="font-mono" style={{ fontSize: 11, color: "var(--dao-blue-800)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← {round.title}</a>
+        <a onClick={onBack} className="font-mono" style={{ fontSize: 11, color: "var(--text-secondary)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← {round.title}</a>
         <div style={{ marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <SevTag s={issue.severity} />
           <span className="tag-mono">{issue.area}</span>
-          {issue.githubUrl ? (
-            <a href={issue.githubUrl} target="_blank" rel="noreferrer" className="font-mono" style={{ fontSize: 12, color: "var(--dao-blue-700)" }}>
-              ↗ github #{issue.githubNumber}
-            </a>
-          ) : null}
+          <span className="tag-mono">{issue.chain}</span>
+          <span className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)" }}>· #{issue.num} · {issue.repo}</span>
         </div>
-        <h1 className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--dao-blue-900)", margin: "12px 0", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
+        <h1 className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", margin: "12px 0", lineHeight: 1.1, letterSpacing: "-0.02em" }}>
           {issue.title}
         </h1>
-        <div className="font-mono" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", marginBottom: 28 }}>
-          {issue.submittedBy ? (<>submitted by <b style={{ color: "var(--dao-blue-900)" }}>{issue.submittedBy.slice(0,6)}…{issue.submittedBy.slice(-4)}</b></>) : null}
+        <div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 28 }}>
+          opened by <b style={{ color: "var(--text-primary)" }}>{issue.author}</b> · {issue.opened} ago · {issue.comments} comments
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 32 }}>
-          <div className="font-body" style={{ fontSize: 16, lineHeight: 1.7, color: "var(--dao-ink)" }}>
-            <div style={{ whiteSpace: "pre-wrap" }}>{issue.body || <i style={{ color: "rgba(11,11,11,0.45)" }}>(no description)</i>}</div>
+          <div className="font-body" style={{ fontSize: 16, lineHeight: 1.7, color: "var(--text-primary)" }}>
+            <div style={{ whiteSpace: "pre-wrap" }}>{issue.body || <i style={{ color: "var(--text-faint)" }}>(no description)</i>}</div>
           </div>
           <div>
             <div style={{ background: "var(--dao-blue-900)", color: "white", padding: 24, borderRadius: 14, position: "sticky", top: 88 }}>
@@ -1805,7 +2132,7 @@ function _LiveHolders({ token }) {
                     </div>
                     {!canVote(role) && (
                       <div style={{ marginTop: 14, fontSize: 11, color: "var(--on-blue-soft)", lineHeight: 1.5 }}>
-                        Read-only. Connect a badgeholder wallet to vote.
+                        Read-only. Connect a wallet that holds an ETHSecurity Badge to vote.
                       </div>
                     )}
                   </>
@@ -1821,7 +2148,7 @@ function _LiveHolders({ token }) {
   // ── Submit issue ─────────────────────────────────────────────────
   // Two modes: "compose" — write directly here.
   //            "import"  — paste a public GitHub issue URL (auto-fetched).
-  function F2Submit({ rounds, setRounds, role, tokens, address, setSaveToast, onSubmitted }) {
+  function F2Submit({ rounds, setRounds, role, tokens, address, setSaveToast, onSubmitted, preselectRoundId }) {
     const { data: _walletClient } = wagmi.useWalletClient();
     const [_submitting, _setSubmitting] = useState(false);
     const [_importPreview, _setImportPreview] = useState(null);
@@ -1938,30 +2265,65 @@ function _LiveHolders({ token }) {
       return ok ? re.round : null;
     }).filter(Boolean);
 
-    // Auto-pick the first eligible round when results arrive.
+    // Auto-pick a round when results arrive: prefer the round the user
+    // came from (preselectRoundId, set when they clicked "+ Add issue"
+    // inside a vote) if it's eligible; otherwise fall back to the first
+    // eligible round.
     useEffect(() => {
-      if (eligibleRounds.length > 0 && !roundId) {
-        setRoundId(eligibleRounds[0].id);
-      }
-    }, [eligibleRounds.length, roundId]);
+      if (eligibleRounds.length === 0 || roundId) return;
+      const preselected = preselectRoundId && eligibleRounds.find((r) => r.id === preselectRoundId);
+      setRoundId(preselected ? preselected.id : eligibleRounds[0].id);
+    }, [eligibleRounds.length, roundId, preselectRoundId]);
     const _eligibilityLoading = !!address && _eligibilityCalls.length > 0 && !_eligibilityBalances;
     const _hasOpenRoundsButNoneEligible = _openRounds.length > 0 && eligibleRounds.length === 0 && !_eligibilityLoading;
     const _noOpenRoundsAtAll = _openRounds.length === 0;
+    // When the user arrived via "+ Add issue" inside a specific vote, the
+    // round is locked. Compute its status so the form can short-circuit
+    // to a "vote is closed" / "missing badge" message instead of letting
+    // the user fill out a form whose submit will fail.
+    const _preselectedRound = preselectRoundId
+      ? rounds.find((r) => r.id === preselectRoundId)
+      : null;
+    const _preselectClosed = !!(_preselectedRound && _preselectedRound.status !== "open");
+    const _preselectIneligible = !!(
+      _preselectedRound &&
+      _preselectedRound.status === "open" &&
+      !_eligibilityLoading &&
+      !eligibleRounds.find((r) => r.id === preselectRoundId)
+    );
 
     if (!canSubmit(role)) {
       return (
         <div style={{ padding: 80, textAlign: "center" }}>
-          <div className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--dao-blue-900)" }}>Only badgeholders can submit issues</div>
-          <div className="font-body" style={{ color: "rgba(11,11,11,0.62)", marginTop: 8 }}>If you don't want to connect a wallet, you can fork the repo and open an issue on GitHub instead.</div>
+          <div className="font-display" style={{ fontSize: 32, fontWeight: 700, color: "var(--text-primary)" }}>Only ETHSecurity Badge holders can submit issues</div>
+          <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8 }}>If you don't want to connect a wallet, you can fork the repo and open an issue on GitHub instead.</div>
           <a href="https://github.com/xerxes-openclaw/thedaolog-issues/issues/new" target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ marginTop: 20 }}>↗ Open on GitHub</a>
         </div>
       );
-    }
+      }
+      if (_preselectClosed) {
+      return (
+        <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+          <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>This vote is closed</div>
+          <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>"{_preselectedRound.title}" stopped accepting new options when it closed. Check the open votes for somewhere your submission belongs.</div>
+          <button className="btn btn-ghost" style={{ marginTop: 20 }} onClick={() => { if (typeof window !== "undefined") { window.history.pushState({}, "", "/votes"); window.dispatchEvent(new PopStateEvent("popstate")); } }}>← Back to votes</button>
+        </div>
+      );
+      }
+      if (_preselectIneligible) {
+      return (
+        <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+          <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>You don't hold the badge for this vote</div>
+          <div className="font-body" style={{ color: "var(--text-muted)", marginTop: 8, lineHeight: 1.5 }}>"{_preselectedRound.title}" requires an ETHSecurity Badge that isn't in your wallet. Ask an admin to mint you the right one and refresh.</div>
+          <button className="btn btn-ghost" style={{ marginTop: 20 }} onClick={() => { if (typeof window !== "undefined") { window.history.pushState({}, "", "/vote/" + preselectRoundId); window.dispatchEvent(new PopStateEvent("popstate")); } }}>← Back to vote</button>
+        </div>
+      );
+      }
 
     return (
       <div style={{ padding: "32px 40px", maxWidth: 880, margin: "0 auto" }}>
-        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em" }}>Propose a new option</div>
-        <div className="font-body" style={{ fontSize: 15, color: "rgba(11,11,11,0.62)", marginTop: 4, lineHeight: 1.6 }}>
+        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Propose a new option</div>
+        <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.6 }}>
           What should theDAO weigh in on? Drop it here, sign and it lands on the ballot.
         </div>
 
@@ -1974,7 +2336,7 @@ function _LiveHolders({ token }) {
               <button key={k} onClick={() => setMode(k)} className="font-display" style={{
                 background: mode === k ? "white" : "transparent",
                 boxShadow: mode === k ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
-                color: mode === k ? "var(--dao-blue-900)" : "rgba(11,11,11,0.62)",
+                color: mode === k ? "var(--dao-blue-900)" : "var(--text-muted)",
                 border: "none", cursor: "pointer", padding: "8px 18px", borderRadius: 999,
                 fontWeight: 600, fontSize: 13,
               }}>{l}</button>
@@ -1985,22 +2347,34 @@ function _LiveHolders({ token }) {
         <div style={{ background: "var(--dao-paper-2)", borderRadius: 14, padding: 28, marginTop: 18, display: "flex", flexDirection: "column", gap: 18 }}>
           {/* round picker — applies to both modes */}
           <Field label="Round">
-              {_eligibilityLoading && (
-                <div className="font-mono" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", padding: "10px 0" }}>
+              {/* Came from inside a vote — round is locked, no dropdown. */}
+              {preselectRoundId && (() => {
+                const _r = rounds.find((rr) => rr.id === preselectRoundId);
+                if (!_r) return null;
+                return (
+                  <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.06)", borderRadius: 8, border: "1px solid var(--stroke-line-2)", display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: "var(--text-primary)" }}>
+                    <span className="font-display" style={{ fontWeight: 600 }}>{_r.title}</span>
+                    <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>· {_r.voting === "quadratic" ? "QV" : "Token-weight"}{_r.rolling ? " · rolling" : ""}</span>
+                  </div>
+                );
+              })()}
+              {/* No preselect — fall back to the standard picker flow. */}
+              {!preselectRoundId && _eligibilityLoading && (
+                <div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", padding: "10px 0" }}>
                   Checking your eligibility on-chain…
                 </div>
               )}
-              {!_eligibilityLoading && _noOpenRoundsAtAll && (
-                <div style={{ padding: 14, background: "var(--dao-paper-2)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 8, fontSize: 13, color: "rgba(11,11,11,0.62)" }}>
+              {!preselectRoundId && !_eligibilityLoading && _noOpenRoundsAtAll && (
+                <div style={{ padding: 14, background: "var(--dao-paper-2)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
                   No open votes right now. Wait for an admin to publish one before you can submit.
                 </div>
               )}
-              {!_eligibilityLoading && _hasOpenRoundsButNoneEligible && (
-                <div style={{ padding: 14, background: "rgba(218,165,32,0.08)", border: "1px solid rgba(218,165,32,0.35)", borderRadius: 8, fontSize: 13, color: "var(--dao-blue-900)" }}>
+              {!preselectRoundId && !_eligibilityLoading && _hasOpenRoundsButNoneEligible && (
+                <div style={{ padding: 14, background: "rgba(218,165,32,0.08)", border: "1px solid rgba(218,165,32,0.35)", borderRadius: 8, fontSize: 13, color: "var(--text-primary)" }}>
                   There are open votes, but you don't hold the eligibility badge for any of them. Ask an admin to mint you the relevant badge, then refresh.
                 </div>
               )}
-              {!_eligibilityLoading && eligibleRounds.length > 0 && (
+              {!preselectRoundId && !_eligibilityLoading && eligibleRounds.length > 0 && (
                 <select className="input" value={roundId || ""} onChange={e => setRoundId(e.target.value)}>
                   {eligibleRounds.map(r => (
                     <option key={r.id} value={r.id}>{r.title} · {r.voting === "quadratic" ? "QV" : "Token-weight"}{r.rolling ? " · rolling" : ""}</option>
@@ -2025,50 +2399,25 @@ function _LiveHolders({ token }) {
                 <input className="input font-mono" placeholder="https://github.com/owner/repo/issues/123" value={importUrl} onChange={e => { setImportUrl(e.target.value); setImported(false); }} />
                 <button className="btn btn-secondary" style={{ marginTop: 8, fontSize: 13, padding: "6px 18px", fontWeight: 600 }} onClick={_fetchPreview} disabled={_previewLoading || !importUrl}>{_previewLoading ? "Fetching…" : (imported ? "✓ Re-fetch" : "Fetch preview")}</button>
               {_previewError && (
-                <div style={{ marginTop: 8, padding: 8, background: "rgba(255,60,56,0.08)", border: "1px solid rgba(255,60,56,0.35)", borderRadius: 6, fontSize: 12, color: "var(--dao-blue-900)" }}>
+                <div style={{ marginTop: 8, padding: 8, background: "rgba(255,60,56,0.08)", border: "1px solid rgba(255,60,56,0.35)", borderRadius: 6, fontSize: 12, color: "var(--text-primary)" }}>
                   Couldn't fetch: {_previewError}
                 </div>
               )}
               </Field>
-              {imported && _importPreview && (
-                <div style={{ background: "white", padding: 20, borderRadius: 12, border: "1px solid var(--dao-stroke-2)" }}>
-                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginBottom: 6 }}>
-                    ✓ FETCHED FROM GITHUB · #{_importPreview.number}
-                  </div>
-                  <div className="font-display" style={{ fontWeight: 600, fontSize: 17, color: "var(--dao-blue-900)" }}>
-                    {_importPreview.title}
-                  </div>
-                  <div className="font-body" style={{ fontSize: 13, color: "rgba(11,11,11,0.62)", marginTop: 4, whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}>
-                    {(_importPreview.body || "").slice(0, 1200) || <i>(no body)</i>}{(_importPreview.body || "").length > 1200 ? "…" : ""}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                    {(_importPreview.labels || []).map((l) => (
-                      <span key={l} className="tag-mono">{l}</span>
-                    ))}
-                  </div>
-                  <div style={{ marginTop: 10, fontSize: 11 }}>
-                    <a href={_importPreview.html_url} target="_blank" rel="noreferrer" style={{ color: "var(--dao-blue-700)" }}>View on GitHub ↗</a>
+              {imported && (
+                <div style={{ background: "var(--surface-card)", padding: 20, borderRadius: 12, border: "1px solid var(--dao-stroke-2)" }}>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginBottom: 6 }}>✓ FETCHED FROM GITHUB</div>
+                  <div className="font-display" style={{ fontWeight: 600, fontSize: 17, color: "var(--text-primary)" }}>Withdrawal queue griefing — DOS via spam exit</div>
+                  <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>An attacker controlling 0.1% of validators can spam exit requests…</div>
+                  <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                    <span className="tag-mono">queues</span>
+                    <span className="tag-mono">spam</span>
+                    <span className="tag-mono">withdrawals</span>
                   </div>
                 </div>
               )}
-              <div style={{ background: "rgba(40,86,122,0.06)", padding: 14, borderRadius: 10, fontSize: 12, color: "rgba(11,11,11,0.62)", lineHeight: 1.6 }}>
-                <div style={{ color: "var(--dao-blue-900)", fontWeight: 600, marginBottom: 6 }}>How to import an issue</div>
-                <ol style={{ margin: 0, paddingLeft: 18 }}>
-                  <li>Open a new issue on our intake repo using the link below — it pre-applies the <code style={{ background: "rgba(40,86,122,0.1)", padding: "1px 5px", borderRadius: 3, fontSize: 11 }}>vote:{roundId || "<vote-id>"}</code> label so the issue is auto-tagged for this vote.</li>
-                  <li>Fill in the title + body on GitHub, hit Submit.</li>
-                  <li>Copy the resulting issue URL, paste it in the box above.</li>
-                  <li>Click <b>Fetch</b> to preview, then <b>Sign + submit</b> to put it on the ballot.</li>
-                </ol>
-                <div style={{ marginTop: 10 }}>
-                  <a
-                    href={roundId
-                      ? `https://github.com/xerxes-openclaw/thedaolog-issues/issues/new?labels=${encodeURIComponent("vote:" + roundId)}`
-                      : "https://github.com/xerxes-openclaw/thedaolog-issues/issues/new"}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: "var(--dao-blue-700)", fontWeight: 600 }}
-                  >→ Open a new GitHub issue for this vote</a>
-                </div>
+              <div style={{ background: "rgba(40,86,122,0.06)", padding: 14, borderRadius: 10, fontSize: 12, color: "var(--text-muted)", lineHeight: 1.55 }}>
+                <b style={{ color: "var(--text-primary)" }}>Don't want to connect GitHub?</b> Fork the repo, open the issue there, then paste the URL here.
               </div>
             </>
           )}
@@ -2084,165 +2433,148 @@ function _LiveHolders({ token }) {
   function Field({ label, hint, children }) {
     return (
       <div>
-        <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>{label}</label>
-        {hint && <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.5)", marginTop: 2 }}>{hint}</div>}
+        <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>{label}</label>
+        {hint && <div className="font-body" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{hint}</div>}
         <div style={{ marginTop: 6 }}>{children}</div>
       </div>
     );
   }
 
   // ── My ballot — across all rounds ────────────────────────────────
-  function F2Ballot({ rounds, allocations, address }) {
-    const { data: _walletClient } = wagmi.useWalletClient();
-    const [_castStatus, _setCastStatus] = useState({});
-    const [_toast, _setToast] = useState(null); // { kind: "ok"|"err", text: string }
-    useEffect(() => {
-      if (!_toast) return;
-      const t = setTimeout(() => _setToast(null), 6000);
-      return () => clearTimeout(t);
-    }, [_toast]);
+  // Read-only ledger of the user's signed ballots across every round.
+  // No sliders, no signing — voting happens on each vote's detail page.
+  // This page is purely a "what did I sign and where" view.
+  function F2Ballot({ rounds, address }) {
+    const [_ballots, _setBallots] = useState({}); // roundId -> StoredBallot
+    const [_loading, _setLoading] = useState(true);
 
-    const _castVote = async (round) => {
-      if (!_walletClient || !address) {
-        _setCastStatus((s) => ({ ...s, [round.id]: { error: "Wallet not connected" } }));
-        _setToast({ kind: "err", text: "Wallet not connected" });
+    useEffect(() => {
+      if (!address || rounds.length === 0) {
+        _setBallots({});
+        _setLoading(false);
         return;
       }
-      _setCastStatus((s) => ({ ...s, [round.id]: "signing" }));
-      try {
-        const allocs = (round.issueIds || [])
-          .filter((id) => Number(allocations[id]) > 0)
-          .map((id) => ({ issueId: id, points: Number(allocations[id]) }));
-        if (allocs.length === 0) {
-          _setCastStatus((s) => ({ ...s, [round.id]: { error: "Allocate at least 1 point" } }));
-          _setToast({ kind: "err", text: "Allocate at least 1 point before signing" });
-          return;
-        }
-        const _proposal = {
-          id: round.id,
-          deadline: round.closes || new Date(Date.now() + 365 * 86400 * 1000).toISOString(),
-          budget: Number(round.budget) || 100,
-        };
-        await votingApi.castVote(_walletClient, address, _proposal, allocs);
-        const totalCost = round.voting === "quadratic"
-          ? allocs.reduce((s, a) => s + a.points * a.points, 0)
-          : allocs.reduce((s, a) => s + a.points, 0);
-        _setCastStatus((s) => ({
-          ...s,
-          [round.id]: { ok: { allocs, total: totalCost, signedAt: new Date().toISOString() } },
+      let cancelled = false;
+      _setLoading(true);
+      (async () => {
+        const out = {};
+        await Promise.all(rounds.map(async (r) => {
+          try {
+            const stored = await votingApi.fetchBallots(r.id);
+            const mine = stored.find((b) => b.ballot.voter.toLowerCase() === address.toLowerCase());
+            if (mine) out[r.id] = mine;
+          } catch { /* skip — keep other rounds */ }
         }));
-        _setToast({ kind: "ok", text: `Signed — your vote on "${round.title}" was recorded` });
-      } catch (e) {
-        _setCastStatus((s) => ({ ...s, [round.id]: { error: e.message || String(e) } }));
-        _setToast({ kind: "err", text: e.message || String(e) });
-      }
-    };
+        if (!cancelled) {
+          _setBallots(out);
+          _setLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }, [address, rounds.map((r) => r.id).join(",")]);
+
+    if (!address) {
+      return (
+        <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
+          <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>Connect a wallet to see your ballot</div>
+          <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8 }}>This page shows your signed votes across every murmuration. Connect the wallet you voted with.</div>
+        </div>
+      );
+    }
+
+    const votedRounds = rounds.filter((r) => _ballots[r.id]);
+
     return (
       <div style={{ padding: "32px 40px", maxWidth: 1080, margin: "0 auto" }}>
-        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em" }}>My ballot</div>
-        <div className="font-body" style={{ fontSize: 15, color: "rgba(11,11,11,0.62)" }}>Each vote signs separately. Stored on-chain in the badgeholder ballot registry.</div>
+        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>My ballot</div>
+        <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)" }}>Your signed murmurs across every vote.</div>
+
+        {_loading && (
+          <div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 28 }}>Loading your ballots…</div>
+        )}
+
+        {!_loading && votedRounds.length === 0 && (
+          <div style={{ padding: 40, marginTop: 28, background: "var(--surface-card)", borderRadius: 14, textAlign: "center", border: "1px solid var(--stroke-line-2)" }}>
+            <div className="font-display" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>You haven't voted yet</div>
+            <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>Head to the Votes page and add your murmurs to an open round.</div>
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 24, marginTop: 28 }}>
-          {rounds.filter(r => r.status === "open").map(r => {
-            const entries = Object.entries(allocations).filter(([k, v]) => v > 0 && r.issueIds.includes(Number(k)));
-            const used = entries.reduce((s, [, v]) => s + (r.voting === "quadratic" ? v * v : v), 0);
-            const total = entries.reduce((s, [, v]) => s + v, 0);
+          {votedRounds.map((r) => {
+            const ballot = _ballots[r.id];
+            const allocs = ballot.ballot.allocations || [];
+            const used = allocs.reduce((s, a) => s + (r.voting === "quadratic" ? Number(a.points) * Number(a.points) : Number(a.points)), 0);
+            const total = allocs.reduce((s, a) => s + Number(a.points), 0);
             return (
-              <div key={r.id} style={{ background: "white", borderRadius: 14, border: "1px solid var(--dao-stroke-2)", overflow: "hidden" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid var(--dao-stroke-2)", background: "var(--dao-paper-2)" }}>
+              <div key={r.id} style={{ background: "var(--surface-card)", borderRadius: 14, border: "1px solid var(--stroke-line-2)", overflow: "hidden" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid var(--stroke-line-2)", background: "var(--surface-elevated)" }}>
                   <div>
-                    <div className="font-display" style={{ fontWeight: 700, fontSize: 18, color: "var(--dao-blue-900)" }}>{r.title}</div>
-                    <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>{r.voting === "quadratic" ? "Quadratic" : "Token-weight"} · {used}/{r.budget} {r.voting === "quadratic" ? "credits" : "votes"} used</div>
+                    <div className="font-display" style={{ fontWeight: 700, fontSize: 18, color: "var(--text-primary)" }}>{r.title}</div>
+                    <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      {r.voting === "quadratic" ? "Quadratic" : "Token-weight"} · {used}/{r.budget} {r.voting === "quadratic" ? "credits" : "votes"} used · signed {new Date(ballot.signedAt).toLocaleDateString()}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                    {(() => {
-                      const st = _castStatus[r.id];
-                      const isSigning = st === "signing";
-                      const ok = st && typeof st === "object" && st.ok;
-                      const label = isSigning
-                        ? "Signing…"
-                        : (ok ? "✓ Update vote" : "Sign + commit →");
-                      return (
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => _castVote(r)}
-                          disabled={isSigning}
-                          style={ok ? { background: "rgb(46,120,46)", borderColor: "rgb(46,120,46)" } : undefined}
-                        >{label}</button>
-                      );
-                    })()}
-                    {(() => {
-                      const st = _castStatus[r.id];
-                      if (!st || typeof st !== "object" || !st.ok) return null;
-                      const breakdown = st.ok.allocs.map(a => a.points).join("+");
-                      const unit = r.voting === "quadratic" ? "credits" : "votes";
-                      return (
-                        <div className="font-mono" style={{ fontSize: 10, color: "rgb(46,120,46)", lineHeight: 1.4, textAlign: "right" }}>
-                          ✓ VOTED · {breakdown} = {st.ok.total} {unit} used
-                        </div>
-                      );
-                    })()}
-                    {(() => {
-                      const st = _castStatus[r.id];
-                      if (!st || typeof st !== "object" || !st.error) return null;
-                      return (
-                        <div className="font-mono" style={{ fontSize: 10, color: "var(--dao-red)", maxWidth: 240, textAlign: "right" }}>{st.error}</div>
-                      );
-                    })()}
-                  </div>
+                  <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--dao-green)", fontWeight: 700 }}>✓ Voted</span>
                 </div>
-                {entries.length === 0 ? (
-                  <div className="font-body" style={{ padding: 24, color: "rgba(11,11,11,0.55)", textAlign: "center" }}>No allocations yet for this vote.</div>
-                ) : entries.map(([id, v], i) => {
-                  const iss = ISSUES.find(x => x.id === Number(id));
-                  const pct = (v / total) * 100;
+                {allocs.map((a, i) => {
+                  const iss = ISSUES.find((x) => x.id === Number(a.issueId));
+                  const pct = total > 0 ? (Number(a.points) / total) * 100 : 0;
+                  const points = Number(a.points);
+                  const cost = r.voting === "quadratic" ? points * points : points;
+                  const optionIndex = (r.issueIds || []).indexOf(Number(a.issueId));
+                  // Deleted options don't appear in r.issueIds anymore but
+                  // the user's signed ballot still has the allocation.
+                  const isDeleted = optionIndex === -1;
                   return (
-                    <div key={id} style={{ padding: "14px 24px", borderBottom: i === entries.length - 1 ? "none" : "1px solid var(--dao-stroke-2)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <SevDot s={iss.severity} />
-                          <span className="font-display" style={{ fontWeight: 600, color: "var(--dao-blue-900)" }}>{iss.title}</span>
+                    <div key={a.issueId} style={{
+                      padding: "20px 28px",
+                      borderBottom: i === allocs.length - 1 ? "none" : "1px solid var(--stroke-line-2)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 18,
+                    }}>
+                      {/* Coin badge — same one used on the vote detail
+                          so users see a consistent visual anchor for
+                          each option. Falls back to a grey placeholder
+                          for deleted options. */}
+                      <img
+                        src={"/assets/murmuration-coin-" + _coinFor(Number(a.issueId), Math.max(0, optionIndex)) + ".png"}
+                        alt=""
+                        style={{
+                          width: 56, height: 56, flexShrink: 0,
+                          opacity: isDeleted ? 0.35 : 1,
+                          filter: isDeleted ? "grayscale(1)" : "none",
+                          userSelect: "none", pointerEvents: "none",
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                          <div className="font-display" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {iss ? iss.title : (isDeleted ? "Option deleted by admin" : ("Option #" + a.issueId))}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
+                            <span className="font-display" style={{ fontSize: 22, fontWeight: 700, color: "var(--dao-red)", lineHeight: 1 }}>{points}</span>
+                            <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                              {r.voting === "quadratic" ? "murmurs" : "votes"}
+                            </span>
+                          </div>
                         </div>
-                        <span className="font-mono" style={{ fontSize: 13, fontWeight: 600, color: "var(--dao-red-dim)" }}>{v} {r.voting === "quadratic" ? "pt" : "votes"}</span>
-                      </div>
-                      <div style={{ height: 6, background: "var(--dao-paper-2)", borderRadius: 3, overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: "var(--dao-red)" }} />
+                        <div style={{ height: 8, background: "var(--surface-elevated)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "var(--dao-red)", borderRadius: 4 }} />
+                        </div>
+                        <div className="font-mono" style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>
+                          <span>cost: {cost} {r.voting === "quadratic" ? "credits" : "votes"}</span>
+                          <span>{pct.toFixed(0)}% of ballot</span>
+                        </div>
                       </div>
                     </div>
                   );
                 })}
-                <div style={{ padding: "12px 24px" }}><_VerifyPanel round={r} /></div>
               </div>
             );
           })}
         </div>
-        {_toast && (
-          <div
-            role="status"
-            style={{
-              position: "fixed",
-              bottom: 24,
-              right: 24,
-              zIndex: 99999,
-              minWidth: 280,
-              maxWidth: 420,
-              padding: "14px 18px",
-              borderRadius: 12,
-              background: _toast.kind === "ok" ? "rgb(46,120,46)" : "rgb(180,40,40)",
-              color: "white",
-              boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
-              fontSize: 13,
-              lineHeight: 1.5,
-              animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
-              cursor: "pointer",
-            }}
-            onClick={() => _setToast(null)}
-          >
-            <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
-              {_toast.kind === "ok" ? "✓ Vote signed" : "✗ Sign failed"}
-            </div>
-            <div>{_toast.text}</div>
-          </div>
-        )}
       </div>
     );
   }
@@ -2254,18 +2586,34 @@ function _LiveHolders({ token }) {
       <div style={{ padding: "32px 40px", maxWidth: 1080, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 24 }}>
           <div>
-            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>Admin</div>
-            <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em" }}>Manage votes</div>
-            <div className="font-body" style={{ fontSize: 15, color: "rgba(11,11,11,0.62)", marginTop: 4 }}>Create, edit, open, or close votes. Multiple votes run concurrently.</div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>Admin</div>
+            <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Manage votes</div>
+            <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)", marginTop: 4 }}>Create, edit, open, or close votes. Multiple votes run concurrently.</div>
           </div>
           <button className="btn btn-primary btn-lg" onClick={onCreate}>+ New vote</button>
         </div>
 
-        <div style={{ background: "white", borderRadius: 14, border: "1px solid var(--dao-stroke-2)", overflow: "hidden" }}>
+        {rounds.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "48px 24px 32px", background: "var(--surface-card)", borderRadius: 14, border: "1px solid var(--stroke-line-2)" }}>
+            <img
+              src="/assets/murmuration-starling.png"
+              alt="Murmuration mascot"
+              style={{ width: 200, height: "auto", opacity: 0.92, userSelect: "none", pointerEvents: "none" }}
+            />
+            <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 20, letterSpacing: "-0.01em" }}>
+              No votes yet
+            </div>
+            <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
+              Start the flock — create the first vote and badgeholders can begin allocating murmurs.
+            </div>
+            <button className="btn btn-primary btn-lg" onClick={onCreate} style={{ marginTop: 24 }}>+ New vote</button>
+          </div>
+        ) : (
+        <div style={{ background: "var(--surface-card)", borderRadius: 14, border: "1px solid var(--dao-stroke-2)", overflow: "hidden" }}>
           <div className="font-mono" style={{
             display: "grid", gridTemplateColumns: "2.4fr 1fr 1fr 1fr 100px 230px", gap: 12,
             padding: "12px 20px", background: "var(--dao-paper-2)",
-            fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)",
+            fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)",
           }}>
             <span>Round</span><span>Voting</span><span>Budget</span><span>Schedule</span><span>Status</span><span></span>
           </div>
@@ -2276,8 +2624,8 @@ function _LiveHolders({ token }) {
               alignItems: "center",
             }}>
               <div>
-                <div className="font-display" style={{ fontWeight: 600, color: "var(--dao-blue-900)" }}>{r.title}</div>
-                <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)" }}>{r.id} · {r.issueIds.length} issues · {r.voters} voted</div>
+                <div className="font-display" style={{ fontWeight: 600, color: "var(--text-primary)" }}>{r.title}</div>
+                <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>{r.id} · {r.issueIds.length} issues · {r.voters} voted</div>
               </div>
               <span className="font-mono" style={{ fontSize: 12 }}>{r.voting === "quadratic" ? "Quadratic" : "Token-weight"}</span>
               <span className="font-mono" style={{ fontSize: 12 }}>{r.budget} {r.voting === "quadratic" ? "pts" : "votes"}</span>
@@ -2286,7 +2634,7 @@ function _LiveHolders({ token }) {
                 fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase",
                 padding: "3px 7px", borderRadius: 4, justifySelf: "start",
                 background: r.status === "open" ? "rgba(82,168,82,0.14)" : "rgba(120,120,120,0.12)",
-                color: r.status === "open" ? "rgb(46,120,46)" : "rgba(11,11,11,0.6)",
+                color: r.status === "open" ? "var(--dao-green)" : "var(--text-muted)",
               }}>● {r.status}</span>
               <div style={{ display: "flex", gap: 6, justifySelf: "end", alignItems: "center", whiteSpace: "nowrap" }}>
                 {_confirmingId === r.id ? (
@@ -2319,6 +2667,7 @@ function _LiveHolders({ token }) {
             </div>
           ))}
         </div>
+        )}
       </div>
     );
   }
@@ -2392,7 +2741,7 @@ function _LiveHolders({ token }) {
         "ERC-721":  { bg: "rgba(255,60,56,0.10)",   fg: "var(--dao-red-dim)" },
         "ERC-1155": { bg: "rgba(218,165,32,0.16)",  fg: "rgb(140,100,8)" },
         "ERC-20":   { bg: "rgba(40,86,122,0.10)",   fg: "var(--dao-blue-800)" },
-      }[kind] || { bg: "rgba(11,11,11,0.06)", fg: "rgba(11,11,11,0.55)" };
+      }[kind] || { bg: "var(--surface-elevated)", fg: "var(--text-muted)" };
       return (
         <span className="font-mono" style={{
           fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
@@ -2406,7 +2755,7 @@ function _LiveHolders({ token }) {
       <div style={{ marginTop: 8 }}>
         {/* Header with count + add button */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgba(11,11,11,0.55)" }}>
+          <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
             {tokens.length} contract{tokens.length === 1 ? "" : "s"} in registry · click to select
           </span>
           <button
@@ -2429,8 +2778,8 @@ function _LiveHolders({ token }) {
 
         {/* Add-new / edit inline form */}
         {_isFormOpen && (
-          <div style={{ padding: 16, background: "white", border: "1px dashed var(--dao-blue-700)", borderRadius: 12, marginBottom: 10 }}>
-            <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "var(--dao-blue-900)", marginBottom: 10 }}>{editingId ? "Edit eligibility contract" : "New eligibility contract"}</div>
+          <div style={{ padding: 16, background: "var(--surface-card)", border: "1px dashed var(--dao-blue-700)", borderRadius: 12, marginBottom: 10 }}>
+            <div className="font-display" style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 10 }}>{editingId ? "Edit eligibility contract" : "New eligibility contract"}</div>
             <input
               className="input font-mono"
               placeholder="Contract address (0x…)"
@@ -2490,30 +2839,30 @@ function _LiveHolders({ token }) {
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   padding: "12px 14px", borderRadius: 10,
-                  background: isSelected ? "rgba(255,60,56,0.06)" : "white",
-                  border: isSelected ? "1.5px solid var(--dao-red)" : "1px solid var(--dao-stroke-2)",
+                  background: isSelected ? "rgba(255,60,56,0.10)" : "var(--surface-card)",
+                  border: isSelected ? "1.5px solid var(--dao-red)" : "1px solid var(--stroke-line-2)",
                   cursor: "pointer",
                   transition: "background .12s, border-color .12s",
                   position: "relative",
                 }}
-                onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = "var(--dao-paper-2)"; e.currentTarget.style.borderColor = "var(--dao-blue-700)"; } }}
-                onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = "white"; e.currentTarget.style.borderColor = "var(--dao-stroke-2)"; } }}
+                onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = "var(--surface-elevated)"; e.currentTarget.style.borderColor = "var(--stroke-line-2)"; } }}
+                onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = "var(--surface-card)"; e.currentTarget.style.borderColor = "var(--stroke-line-2)"; } }}
               >
                 {/* Radio indicator */}
                 <div style={{
                   width: 18, height: 18, borderRadius: 999, flexShrink: 0,
-                  border: isSelected ? "5px solid var(--dao-red)" : "2px solid rgba(11,11,11,0.25)",
-                  background: "white",
+                  border: isSelected ? "5px solid var(--dao-red)" : "2px solid var(--stroke-line-2)",
+                  background: "var(--surface-card)",
                   transition: "border .12s",
                 }} />
                 <TokenAvatar token={t} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span className="font-display" style={{ fontWeight: 700, fontSize: 14, color: "var(--dao-blue-900)" }}>{t.symbol}</span>
-                    <span className="font-body" style={{ fontSize: 13, color: "rgba(11,11,11,0.62)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                    <span className="font-display" style={{ fontWeight: 700, fontSize: 14, color: "var(--text-primary)" }}>{t.symbol}</span>
+                    <span className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                     <KindBadge kind={t.kind} />
                   </div>
-                  <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", marginTop: 3 }}>
+                  <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>
                     {shortAddr(t.address)} · {t.chain} · <_LiveHolders token={t} />
                   </div>
                 </div>
@@ -2524,10 +2873,10 @@ function _LiveHolders({ token }) {
                   style={{
                     width: 26, height: 26, borderRadius: 6, border: "none",
                     background: "transparent", cursor: "pointer",
-                    color: "rgba(11,11,11,0.3)", fontSize: 15, lineHeight: 1, flexShrink: 0,
+                    color: "var(--text-faint)", fontSize: 15, lineHeight: 1, flexShrink: 0,
                   }}
                   onMouseEnter={e => e.currentTarget.style.color = "var(--dao-blue-800)"}
-                  onMouseLeave={e => e.currentTarget.style.color = "rgba(11,11,11,0.3)"}
+                  onMouseLeave={e => e.currentTarget.style.color = "var(--text-faint)"}
                 >✎</button>
                 {tokens.length > 1 && (
                   <button
@@ -2537,17 +2886,17 @@ function _LiveHolders({ token }) {
                     style={{
                       width: 26, height: 26, borderRadius: 6, border: "none",
                       background: "transparent", cursor: "pointer",
-                      color: "rgba(11,11,11,0.3)", fontSize: 18, lineHeight: 1, flexShrink: 0,
+                      color: "var(--text-faint)", fontSize: 18, lineHeight: 1, flexShrink: 0,
                     }}
                     onMouseEnter={e => e.currentTarget.style.color = "var(--dao-red)"}
-                    onMouseLeave={e => e.currentTarget.style.color = "rgba(11,11,11,0.3)"}
+                    onMouseLeave={e => e.currentTarget.style.color = "var(--text-faint)"}
                   >×</button>
                 )}
               </div>
             );
           })}
           {tokens.length === 0 && (
-            <div style={{ padding: 24, textAlign: "center", color: "rgba(11,11,11,0.55)", fontSize: 13, background: "white", border: "1px dashed var(--dao-stroke-2)", borderRadius: 10 }}>
+            <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 13, background: "var(--surface-card)", border: "1px dashed var(--dao-stroke-2)", borderRadius: 10 }}>
               No contracts in your registry yet. Click <b>+ Add new contract</b> above.
             </div>
           )}
@@ -2568,7 +2917,7 @@ function _LiveHolders({ token }) {
           style={{
             width: 36, height: 36, borderRadius: 999, flexShrink: 0,
             objectFit: "cover",
-            boxShadow: "inset 0 0 0 1px rgba(11,11,11,0.08)",
+            boxShadow: "inset 0 0 0 1px var(--stroke-line)",
             background: "var(--dao-paper-2)",
           }}
         />
@@ -2667,7 +3016,7 @@ function _LiveHolders({ token }) {
     let tz = "local";
     try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local"; } catch (e) { void e; }
     return (
-      <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", marginTop: 6, lineHeight: 1.6 }}>
+      <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6, lineHeight: 1.6 }}>
         Now: {localStr} ({tz}) · {utcStr} UTC
       </div>
     );
@@ -2725,8 +3074,8 @@ function _LiveHolders({ token }) {
 
     return (
       <div style={{ padding: "32px 40px", maxWidth: 880, margin: "0 auto" }}>
-        <a onClick={onCancel} className="font-mono" style={{ fontSize: 11, color: "var(--dao-blue-800)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← Admin</a>
-        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--dao-blue-900)", letterSpacing: "-0.02em", marginTop: 8 }}>
+        <a onClick={onCancel} className="font-mono" style={{ fontSize: 11, color: "var(--text-secondary)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← Admin</a>
+        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", marginTop: 8 }}>
           {isNew ? "Create vote" : "Edit vote"}
         </div>
 
@@ -2749,17 +3098,17 @@ function _LiveHolders({ token }) {
           </Field>
 
           <div>
-            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Voting mechanism</label>
+            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Voting mechanism</label>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
               {[
                 { v: "quadratic", t: "Quadratic", d: "Cost = pts². Depth gets expensive — encourages spread." },
-                { v: "token-weight", t: "Token-weight", d: "1 vote = 1 credit. Each badgeholder gets 100 votes." },
+                { v: "token-weight", t: "Token-weight", d: "1 vote = 1 credit. Each ETHSecurity Badge holder gets 100 votes." },
               ].map(opt => (
                 <button key={opt.v} onClick={() => set("voting", opt.v)} style={{
                   textAlign: "left", padding: 16, borderRadius: 10, cursor: "pointer",
-                  background: r.voting === opt.v ? "var(--dao-blue-900)" : "white",
-                  color: r.voting === opt.v ? "white" : "var(--dao-ink)",
-                  border: r.voting === opt.v ? "1px solid var(--dao-blue-900)" : "1px solid var(--dao-stroke-2)",
+                  background: r.voting === opt.v ? "var(--dao-blue-900)" : "var(--surface-card)",
+                  color: r.voting === opt.v ? "white" : "var(--text-primary)",
+                  border: r.voting === opt.v ? "1px solid var(--dao-blue-900)" : "1px solid var(--stroke-line-2)",
                 }}>
                   <div className="font-display" style={{ fontWeight: 700, fontSize: 16 }}>{opt.t}</div>
                   <div className="font-body" style={{ fontSize: 12, opacity: 0.75, marginTop: 4, lineHeight: 1.5 }}>{opt.d}</div>
@@ -2768,37 +3117,14 @@ function _LiveHolders({ token }) {
             </div>
           </div>
 
-          <div>
-            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Budget</label>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 8 }}>
-              {[
-                { v: "token-based", t: "Token-based", d: "Voting power = each holder's token balance. No fixed budget." },
-                { v: "by-user",     t: "By user",     d: "Every badgeholder gets the same allocation, set below." },
-              ].map(opt => (
-                <button key={opt.v} type="button" onClick={() => set("budgetMode", opt.v)} style={{
-                  textAlign: "left", padding: 16, borderRadius: 10, cursor: "pointer",
-                  background: r.budgetMode === opt.v ? "var(--dao-blue-900)" : "white",
-                  color: r.budgetMode === opt.v ? "white" : "var(--dao-ink)",
-                  border: r.budgetMode === opt.v ? "1px solid var(--dao-blue-900)" : "1px solid var(--dao-stroke-2)",
-                }}>
-                  <div className="font-display" style={{ fontWeight: 700, fontSize: 16 }}>{opt.t}</div>
-                  <div className="font-body" style={{ fontSize: 12, opacity: 0.75, marginTop: 4, lineHeight: 1.5 }}>{opt.d}</div>
-                </button>
-              ))}
-            </div>
-            {r.budgetMode === "by-user" && (
-              <div style={{ marginTop: 14 }}>
-                <Field label={r.voting === "quadratic" ? "Credits per user" : "Votes per user"}>
-                  <input className="input font-mono" type="number" value={r.budget} onChange={e => set("budget", Number(e.target.value))} />
-                </Field>
-              </div>
-            )}
-          </div>
+          <Field label={r.voting === "quadratic" ? "Budget (murmurs)" : "Votes per holder"}>
+            <input className="input font-mono" type="number" value={r.budget} onChange={e => set("budget", Number(e.target.value))} />
+          </Field>
 
           <div>
-            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Schedule</label><NowDisplay />
+            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Schedule</label><NowDisplay />
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--dao-ink)" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-primary)" }}>
                 <input type="checkbox" checked={r.rolling} onChange={e => set("rolling", e.target.checked)} />
                 Always open (no end date)
               </label>
@@ -2808,7 +3134,7 @@ function _LiveHolders({ token }) {
                 <DateTimePickerUtc value={r.opens} onChange={(v) => set("opens", v)} />
               </Field>
               <div style={{ opacity: r.rolling ? 0.35 : 1, pointerEvents: r.rolling ? "none" : "auto", transition: "opacity .18s ease" }}>
-                <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Duration</label>
+                <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Duration</label>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <select className="input" value={closeMode} onChange={e => setCloseMode(e.target.value)} disabled={r.rolling} style={{ flex: closeMode === "custom" ? "0 0 140px" : 1 }}>
                     <option value="1w">1 week</option>
@@ -2822,7 +3148,7 @@ function _LiveHolders({ token }) {
                     <DateTimePickerUtc value={r.rolling ? "" : r.closes} onChange={(v) => set("closes", v)} disabled={r.rolling} placeholder={r.rolling ? "— rolling —" : ""} />
                   )}
                 </div>
-                <div className="font-mono" style={{ fontSize: 11, color: "rgba(11,11,11,0.55)", marginTop: 6 }}>
+                <div className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
                   Closes: {r.rolling ? "rolling — no end date" : (_prettyLocalClose(r.closes) || "—")}
                 </div>
               </div>
@@ -2830,8 +3156,8 @@ function _LiveHolders({ token }) {
           </div>
 
           <div>
-            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(11,11,11,0.62)" }}>Eligibility token / NFT</label>
-            <div className="font-body" style={{ fontSize: 12, color: "rgba(11,11,11,0.55)", marginTop: 4, lineHeight: 1.55 }}>
+            <label className="font-mono" style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)" }}>Eligibility token / NFT</label>
+            <div className="font-body" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.55 }}>
               Holders of this contract can vote here. The first token in your registry is the default — change it any time.
             </div>
             <TokenPicker
@@ -2874,13 +3200,17 @@ function _LiveHolders({ token }) {
     }, [_saveToast]);
     const { data: _walletClient } = wagmi.useWalletClient();
     const _hydrated = useRef(false);
+    // Public-facing state — used by render so screens can show skeletons
+    // while the initial /api/proposals fetch is in flight, instead of
+    // flashing "Round not found" for a fresh deep-link.
+    const [_hydrationDone, _setHydrationDone] = useState(false);
     useEffect(() => {
       if (_hydrated.current) return;
       _hydrated.current = true;
       (async () => {
         try {
           const fetched = await votingApi.fetchProposals();
-          if (!fetched || fetched.length === 0) return;
+          if (!fetched || fetched.length === 0) { _setHydrationDone(true); return; }
           const newRounds = [];
           for (const p of fetched) {
             for (const opt of (p.options || [])) {
@@ -2928,6 +3258,8 @@ function _LiveHolders({ token }) {
           });
         } catch (e) {
           console.error("[F2App] hydrate failed:", e);
+        } finally {
+          _setHydrationDone(true);
         }
       })();
     }, []);
@@ -3059,6 +3391,20 @@ function _LiveHolders({ token }) {
             }}
           />
         )}
+        {screen === "round" && !round && _hydrationDone && (
+          <F2RoundNotFound
+            onBack={() => {
+              setCurrentRound(null);
+              setScreen("rounds");
+              if (typeof window !== "undefined") {
+                window.history.pushState({}, "", "/votes");
+              }
+            }}
+          />
+        )}
+        {screen === "round" && !round && !_hydrationDone && (
+          <F2RoundSkeleton />
+        )}
         {screen === "issue" && round && currentIssue && (
           <F2IssueDetail
             issue={ISSUES.find(i => i.id === currentIssue)}
@@ -3076,12 +3422,13 @@ function _LiveHolders({ token }) {
             role={role}
             tokens={tokens}
             address={address}
+            preselectRoundId={currentRound}
             setSaveToast={_setSaveToast}
             onSubmitted={(rid) => { setCurrentRound(rid); setScreen("round"); }}
           />
         )}
         {screen === "ballot" && (
-          <F2Ballot rounds={rounds} allocations={allocations} address={address} />
+          <F2Ballot rounds={rounds} address={address} />
         )}
         {screen === "admin" && canAdmin(role) && (
           <F2Admin
@@ -3130,11 +3477,56 @@ function _LiveHolders({ token }) {
                 _setSaveToast({ kind: "err", text: "Wallet not connected. Connect your wallet (top right) and try again." });
                 return;
               }
-              const opts = (saved.issueIds || []).map((id) => {
-                const iss = ISSUES.find((i) => i.id === id);
-                return { id, label: iss?.title || ("Issue " + id) };
-              });
+              // Server-authoritative option labels: when editing an
+              // existing proposal, fetch the live options from the API and
+              // pass those through. POST /api/proposals overwrites the
+              // whole record, so any option not in our payload — or with a
+              // bogus fallback label — would clobber the real one.
+              // (Earlier the fallback was "Issue " + id, which silently
+              // renamed every option whenever ISSUES wasn't hydrated. Real
+              // labels are now sourced from the server, not a local cache.)
+              let opts;
+              try {
+                const live = await votingApi.fetchProposal(saved.id).catch(() => null);
+                const liveOpts = (live && live.proposal && live.proposal.options) || null;
+                if (liveOpts && liveOpts.length > 0) {
+                  // Editing an existing vote — preserve server labels for
+                  // each id the editor still has, ignore ids the editor
+                  // doesn't recognize (admin deleted them in this session).
+                  const byId = new Map(liveOpts.map((o) => [o.id, o]));
+                  opts = (saved.issueIds || []).map((id) => {
+                    const fromServer = byId.get(id);
+                    if (fromServer) return { id, label: fromServer.label };
+                    // New option added in this session via ISSUES (rare)
+                    const iss = ISSUES.find((i) => i.id === id);
+                    return iss && iss.title ? { id, label: iss.title } : null;
+                  }).filter(Boolean);
+                } else {
+                  // First-publish flow (no server record yet) — rely on
+                  // ISSUES, but skip ids we can't resolve instead of
+                  // fabricating "Issue {id}" labels.
+                  opts = (saved.issueIds || []).map((id) => {
+                    const iss = ISSUES.find((i) => i.id === id);
+                    return iss && iss.title ? { id, label: iss.title } : null;
+                  }).filter(Boolean);
+                }
+              } catch (e) {
+                console.error("[options-resolve] failed:", e);
+                _setSaveToast({ kind: "err", text: "Couldn't resolve option labels — vote not saved. Try again." });
+                return;
+              }
               _setSaveToast({ kind: "ok", text: "Sign the create-vote action in your wallet…" });
+              // Rolling votes have no client-visible deadline, but the
+              // server (and bulk-hydrate's status derivation) only know
+              // about deadlines. Persist a far-future timestamp so the
+              // vote registers as "open" forever. Without this, ticking
+              // "Always open" while a closed deadline is still in r.closes
+              // would re-save the past date → bulk-hydrate sees expired
+              // → vote stays in past-votes after refresh.
+              const _ROLLING_DEADLINE = new Date(Date.now() + 100 * 365 * 86400 * 1000).toISOString();
+              const _effectiveDeadline = saved.rolling
+                ? _ROLLING_DEADLINE
+                : (saved.closes || new Date(Date.now() + 7 * 86400 * 1000).toISOString());
               try {
                 await votingApi.createProposal({
                   id: saved.id,
@@ -3143,7 +3535,7 @@ function _LiveHolders({ token }) {
                   votingMode: saved.voting === "quadratic" ? "quadratic" : "token-weight",
                   budget: Number(saved.budget) || 100,
                   options: opts,
-                  deadline: saved.closes || new Date(Date.now() + 7 * 86400 * 1000).toISOString(),
+                  deadline: _effectiveDeadline,
                   tokenId: saved.tokenId || null,
                 }, _walletClient, address);
                 // Only after server confirms: add to local state.
@@ -3164,26 +3556,48 @@ function _LiveHolders({ token }) {
             onCancel={() => setScreen("admin")}
           />
         )}
-      {_saveToast && (
-          <div
-            role="status"
-            onClick={() => _setSaveToast(null)}
-            style={{
-              position: "fixed", bottom: 24, right: 24, zIndex: 99999,
-              minWidth: 320, maxWidth: 460,
-              padding: "14px 18px", borderRadius: 12,
-              background: _saveToast.kind === "ok" ? "rgb(46,120,46)" : "rgb(180,40,40)",
-              color: "white", boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
-              fontSize: 13, lineHeight: 1.5, cursor: "pointer",
-              animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
-            }}
-          >
-            <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
-              {_saveToast.kind === "ok" ? "✓ Saved" : "✗ Save failed"}
+      {_saveToast && (() => {
+          // Detect the vote-cast-success moment so the starling mascot can
+          // celebrate the "your wingbeat joins the flock" moment. We only
+          // show the bird when the user actually signed a ballot — not for
+          // routine confirmations or admin-side saves.
+          const _isVoteCast = _saveToast.kind === "ok" && /^Signed\s/.test(_saveToast.text || "");
+          return (
+            <div
+              role="status"
+              onClick={() => _setSaveToast(null)}
+              style={{
+                position: "fixed", bottom: 24, right: 24, zIndex: 99999,
+                minWidth: _isVoteCast ? 380 : 320, maxWidth: 480,
+                padding: _isVoteCast ? "14px 18px 14px 14px" : "14px 18px",
+                borderRadius: 12,
+                background: _saveToast.kind === "ok" ? "var(--dao-green)" : "rgb(180,40,40)",
+                color: "white", boxShadow: "0 18px 48px -12px rgba(0,0,0,0.45)",
+                fontSize: 13, lineHeight: 1.5, cursor: "pointer",
+                animation: "f2pop .22s cubic-bezier(.2,.9,.3,1.1)",
+                display: _isVoteCast ? "flex" : "block",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              {_isVoteCast && (
+                <img
+                  src="/assets/murmuration-starling.png"
+                  alt=""
+                  style={{ width: 64, height: "auto", flexShrink: 0, userSelect: "none", pointerEvents: "none" }}
+                />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", opacity: 0.85, marginBottom: 4 }}>
+                  {_saveToast.kind === "ok"
+                    ? (_isVoteCast ? "✦ Your wingbeat joins the flock" : "✓ Saved")
+                    : "✗ Save failed"}
+                </div>
+                <div>{_saveToast.text}</div>
+              </div>
             </div>
-            <div>{_saveToast.text}</div>
-          </div>
-        )}
+          );
+        })()}
         </F2Chrome>
     );
   }
