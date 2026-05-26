@@ -2029,14 +2029,9 @@ function _LiveHolders({ token }) {
                     />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                        <SevTag s={iss.severity} />
                         <span className="font-mono" style={{ fontSize: 11, color: "var(--text-muted)" }}>#{iss.num} · {iss.repo}</span>
                       </div>
                       <div className="font-display" style={{ fontSize: 18, fontWeight: 600, color: "var(--text-primary)", lineHeight: 1.3 }}>{iss.title}</div>
-                      <div style={{ display: "flex", gap: 12, marginTop: 8, fontSize: 12, color: "var(--text-muted)", alignItems: "center", flexWrap: "wrap" }}>
-                        <span>by <b style={{ color: "var(--text-secondary)" }}>{iss.author}</b></span>
-                        <span>· {iss.voters} voters</span>
-                      </div>
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
