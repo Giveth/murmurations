@@ -1237,8 +1237,8 @@ const F2 = (() => {
                     </div>
 
                     <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", flexDirection: "column", gap: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmuration total</span><span className="font-mono">{issue.totalVotes.toLocaleString()}</span></div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmurs</span><span className="font-mono">{issue.voters}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmuration total</span><span className="font-mono">{Number(issue.totalVotes || 0).toLocaleString()}</span></div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmurs</span><span className="font-mono">{issue.voters || 0}</span></div>
                     </div>
                     {!canVote(role) && (
                       <div style={{ marginTop: 14, fontSize: 11, color: "var(--on-blue-soft)", lineHeight: 1.5 }}>
