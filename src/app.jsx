@@ -595,7 +595,7 @@ function _LiveHolders({ token }) {
             transition: "background .15s, border-color .15s",
           }}
         >
-          <span>Verify signed ballots</span>
+          <span>Verify signed murmurs</span>
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase",
             padding: "3px 9px", borderRadius: 999,
@@ -1855,7 +1855,7 @@ function _LiveHolders({ token }) {
       <div style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 32, padding: "32px 40px", maxWidth: 1400, margin: "0 auto" }}>
         {/* sidebar */}
         <div style={{ position: "sticky", top: 88, alignSelf: "start" }}>
-          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Your ballot</div>
+          <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Your murmur</div>
           <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 4, lineHeight: 1.2 }}>{round.title}</div>
           <div className="font-body" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>
             {round.voting === "quadratic" ? "Quadratic vote · Every extra point costs more" : "Token-weight vote · 1 vote = 1 credit"}
@@ -1925,19 +1925,19 @@ function _LiveHolders({ token }) {
                 </div>
               ) : _allOrphaned ? (
                 <div key="invalidated" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your vote was invalidated</div>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your murmur was invalidated</div>
                   <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
-                    ✓ {_orphanedCredits} pending murmurs returned to your flock
+                    ✓ {_orphanedCredits} pending credits returned to your flock
                   </div>
                   <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
-                    Every issue you voted on was deleted. Slide to allocate again.
+                    Every direction you allocated to was deleted. Slide to allocate again.
                   </div>
                 </div>
               ) : _hasOrphans ? (
                 <div key="partial" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
                   <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ You partially voted</div>
                   <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
-                    ✓ {_orphanedCredits} pending murmurs returned to your flock
+                    ✓ {_orphanedCredits} pending credits returned to your flock
                   </div>
                   <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     An issue you voted on was deleted. Slide to reallocate.
@@ -1974,7 +1974,7 @@ function _LiveHolders({ token }) {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
             <div>
-              <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>What's on the ballot</div>
+              <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Directions</div>
             </div>
             {canSubmit(role) && (
               <button className="btn btn-ghost" onClick={onSubmit}>+ Add a direction</button>
@@ -1983,7 +1983,7 @@ function _LiveHolders({ token }) {
           <div style={{ background: "rgba(255,60,56,0.10)", border: "1px solid rgba(255,60,56,0.25)", borderLeft: "4px solid var(--dao-red)", borderRadius: 10, padding: "14px 18px", fontSize: 14, color: "var(--text-primary)", marginBottom: 18, lineHeight: 1.55 }}>
             Don't see the choice you want? {canSubmit(role) ? (
               <a onClick={onSubmit} style={{ color: "var(--dao-red)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>create a direction here</a>
-            ) : <span style={{ color: "var(--dao-red)", fontWeight: 700 }}>connect an ETHSecurity Badge wallet to add one to the ballot</span>}.
+            ) : <span style={{ color: "var(--dao-red)", fontWeight: 700 }}>connect an ETHSecurity Badge wallet to add one to the murmuration</span>}.
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {issues.map(iss => {
@@ -2448,7 +2448,7 @@ function _LiveHolders({ token }) {
       <div style={{ padding: "32px 40px", maxWidth: 880, margin: "0 auto" }}>
         <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Propose a new option</div>
         <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.6 }}>
-          What should theDAO weigh in on? Drop it here, sign and it lands on the ballot.
+          What should theDAO weigh in on? Drop it here, sign and it lands on the murmuration.
         </div>
 
         {/* mode toggle — gated on IMPORT_FROM_GITHUB_ENABLED. The

@@ -755,7 +755,7 @@ const _verifyPanelComponent = `
             transition: "background .15s, border-color .15s",
           }}
         >
-          <span>Verify signed ballots</span>
+          <span>Verify signed murmurs</span>
           <span style={{
             fontSize: 10, fontWeight: 700, letterSpacing: "0.10em", textTransform: "uppercase",
             padding: "3px 9px", borderRadius: 999,
@@ -1053,19 +1053,19 @@ flow2 = flow2.replace(
                 </div>
               ) : _allOrphaned ? (
                 <div key="invalidated" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
-                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your vote was invalidated</div>
+                  <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ Your murmur was invalidated</div>
                   <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
-                    ✓ {_orphanedCredits} pending murmurs returned to your flock
+                    ✓ {_orphanedCredits} pending credits returned to your flock
                   </div>
                   <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
-                    Every issue you voted on was deleted. Slide to allocate again.
+                    Every direction you allocated to was deleted. Slide to allocate again.
                   </div>
                 </div>
               ) : _hasOrphans ? (
                 <div key="partial" style={{ background: "rgba(217,140,30,0.12)", border: "1px solid rgba(217,140,30,0.45)", borderLeft: "4px solid rgb(217,140,30)", borderRadius: 10, padding: "18px 20px", animation: "f2statepop .18s ease-out" }}>
                   <div className="font-display" style={{ fontSize: 17, fontWeight: 700, color: "rgb(240,170,60)", letterSpacing: "-0.01em" }}>⚠ You partially voted</div>
                   <div className="font-mono" style={{ fontSize: 11, color: "var(--dao-green)", marginTop: 8, letterSpacing: "0.04em" }}>
-                    ✓ {_orphanedCredits} pending murmurs returned to your flock
+                    ✓ {_orphanedCredits} pending credits returned to your flock
                   </div>
                   <div className="font-body" style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 10, lineHeight: 1.5 }}>
                     An issue you voted on was deleted. Slide to reallocate.
