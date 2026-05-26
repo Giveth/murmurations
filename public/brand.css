@@ -1,6 +1,11 @@
 /* theDAO — shared brand tokens */
 @import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
+/* Normalize text selection across browsers so the highlight is visible
+   on both dark and light surfaces regardless of OS / browser defaults. */
+::selection { background: rgba(255, 60, 56, 0.55); color: white; }
+::-moz-selection { background: rgba(255, 60, 56, 0.55); color: white; }
+
 :root {
   /* Core brand — calibrated to the Ethereum Security Badge image */
   --dao-blue-950: rgb(20, 46, 74);
