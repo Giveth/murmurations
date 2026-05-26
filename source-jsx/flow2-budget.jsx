@@ -27,8 +27,8 @@ const F2 = (() => {
     // vote ("+ Add issue") and that route already pre-targets the current
     // round, so a standalone Submit tab is redundant noise.
     const items = [
-      ["rounds",  "Votes"],
-      ["ballot",  "My ballot",canVote(role)],
+      ["rounds",  "Murmurations"],
+      ["ballot",  "My murmur",canVote(role)],
       ["admin",   "Admin",    canAdmin(role)],
     ].filter(x => x[2] !== false);
     // Đ-flock wallpaper — centroid-based clustering for a real
@@ -604,10 +604,10 @@ const F2 = (() => {
       <div style={{ padding: "40px 40px 80px", maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 28 }}>
           <div>
-            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>Active votes</div>
-            <div className="font-display" style={{ fontSize: 56, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>Votes</div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>Active murmurations</div>
+            <div className="font-display" style={{ fontSize: 56, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", lineHeight: 1.05 }}>Murmurations</div>
             <div className="font-body" style={{ fontSize: 16, color: "var(--text-muted)", marginTop: 8, maxWidth: 640 }}>
-              {open.length} vote{open.length === 1 ? "" : "s"} open. {role === "visitor" ? "Connect an ETHSecurity Badge wallet to participate." : null}
+              {open.length} murmuration{open.length === 1 ? "" : "s"} open. {role === "visitor" ? "Connect an ETHSecurity Badge wallet to participate." : null}
             </div>
           </div>
           {canAdmin(role) && (
@@ -704,7 +704,7 @@ const F2 = (() => {
         <div style={{ display: "flex", gap: 22, marginTop: 22, paddingTop: 18, borderTop: "1px solid var(--stroke-line-2)" }}>
           <Stat label="Voting" value={r.voting === "quadratic" ? "Quadratic" : "Token-weight"} />
           <Stat label="Budget" value={`${r.budget} ${r.voting === "quadratic" ? "pts" : "votes"}`} />
-          <Stat label="Issues" value={r.issueIds.length} />
+          <Stat label="Directions" value={r.issueIds.length} />
           <Stat label={r.rolling ? "Status" : "Closes"} value={r.rolling ? "Always open" : (_prettyLocalClose(r.closes) || "—")} />
         </div>
       </div>
@@ -1034,7 +1034,7 @@ const F2 = (() => {
             {round.rolling ? " · Always open" : ` · Closes ${_prettyLocalClose(round.closes) || ""}`}
           </div>
           <div style={{ marginTop: 24, display: "flex", justifyContent: "center" }}>
-            <DonutBudget used={used} total={round.budget} label={round.voting === "quadratic" ? "murmurs" : "votes"} />
+            <DonutBudget used={used} total={round.budget} label={round.voting === "quadratic" ? "credits" : "votes"} />
           </div>
           <div style={{ marginTop: 18, display: "flex", flexDirection: "column", gap: 8, maxHeight: 200, overflowY: "auto" }}>
             {Object.entries(allocations).filter(([k, v]) => v > 0 && round.issueIds.includes(Number(k))).map(([id, v]) => {
@@ -1143,10 +1143,10 @@ const F2 = (() => {
                     {round.voting === "quadratic" ? (
                       <div className="font-mono" style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", textAlign: "right", lineHeight: 1.5 }}>
                         <div style={{ color: "var(--text-muted)" }}>
-                          Cost: <span style={{ color: "var(--dao-red-dim)", fontWeight: 600 }}>{cost} murmurs</span>
+                          Cost: <span style={{ color: "var(--dao-red-dim)", fontWeight: 600 }}>{cost} credits</span>
                         </div>
                         <div style={{ color: "var(--text-muted)" }}>
-                          Next vote: <span style={{ color: canAffordNext ? "var(--text-secondary)" : "var(--text-faint)", fontWeight: 600 }}>+{nextCost} murmurs</span>
+                          Next: <span style={{ color: canAffordNext ? "var(--text-secondary)" : "var(--text-faint)", fontWeight: 600 }}>+{nextCost} credits</span>
                           {!canAffordNext && <span style={{ marginLeft: 4, color: "var(--text-faint)" }}>· over budget</span>}
                         </div>
                       </div>
@@ -1259,7 +1259,7 @@ const F2 = (() => {
                     </div>
                     {!canVote(role) && (
                       <div style={{ marginTop: 14, fontSize: 11, color: "var(--on-blue-soft)", lineHeight: 1.5 }}>
-                        Read-only. Connect an ETHSecurity Badge wallet to vote.
+                        Read-only. Connect an ETHSecurity Badge wallet to murmur.
                       </div>
                     )}
                   </>
@@ -1420,7 +1420,7 @@ const F2 = (() => {
     if (!address) {
       return (
         <div style={{ padding: 80, textAlign: "center", maxWidth: 560, margin: "0 auto" }}>
-          <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>Connect your wallet to see your ballot.</div>
+          <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>Connect your wallet to see your murmur.</div>
         </div>
       );
     }
@@ -1429,8 +1429,8 @@ const F2 = (() => {
 
     return (
       <div style={{ padding: "32px 40px", maxWidth: 1080, margin: "0 auto" }}>
-        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>My ballot</div>
-        <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)" }}>Your signed murmurs across every vote.</div>
+        <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>My murmur</div>
+        <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)" }}>Your signed murmurs across every murmuration.</div>
 
         {_loading && (
           <div className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 28 }}>Loading your ballots…</div>
@@ -1439,7 +1439,7 @@ const F2 = (() => {
         {!_loading && votedRounds.length === 0 && (
           <div style={{ padding: 40, marginTop: 28, background: "var(--surface-card)", borderRadius: 14, textAlign: "center", border: "1px solid var(--stroke-line-2)" }}>
             <div className="font-display" style={{ fontSize: 18, fontWeight: 700, color: "var(--text-primary)" }}>You haven't voted yet</div>
-            <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>Head to the Votes page and add your murmurs to an open round.</div>
+            <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6 }}>Head to the Murmurations page and add your murmur to an open murmuration.</div>
           </div>
         )}
 
@@ -1499,7 +1499,7 @@ const F2 = (() => {
                           <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexShrink: 0 }}>
                             <span className="font-display" style={{ fontSize: 22, fontWeight: 700, color: "var(--dao-red)", lineHeight: 1 }}>{points}</span>
                             <span className="font-mono" style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-                              {r.voting === "quadratic" ? "murmurs" : "votes"}
+                              {r.voting === "quadratic" ? "credits" : "votes"}
                             </span>
                           </div>
                         </div>
@@ -1546,7 +1546,7 @@ const F2 = (() => {
               No votes yet
             </div>
             <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, maxWidth: 420, marginLeft: "auto", marginRight: "auto" }}>
-              Start the flock — create the first vote and badgeholders can begin allocating murmurs.
+              Start the flock — create the first murmuration and badgeholders can begin allocating credits.
             </div>
             <button className="btn btn-primary btn-lg" onClick={onCreate} style={{ marginTop: 24 }}>+ New vote</button>
           </div>
@@ -1865,7 +1865,7 @@ const F2 = (() => {
       <div style={{ padding: "32px 40px", maxWidth: 880, margin: "0 auto" }}>
         <a onClick={onCancel} className="font-mono" style={{ fontSize: 11, color: "var(--text-secondary)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← Admin</a>
         <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em", marginTop: 8 }}>
-          {isNew ? "Create round" : "Edit round"}
+          {isNew ? "Create murmuration" : "Edit murmuration"}
         </div>
 
         <div style={{ background: "var(--dao-paper-2)", borderRadius: 14, padding: 28, marginTop: 24, display: "flex", flexDirection: "column", gap: 18 }}>
@@ -1873,7 +1873,7 @@ const F2 = (() => {
             <input className="input" value={r.title} onChange={e => set("title", e.target.value)} placeholder="Round 8 — …" />
           </Field>
           <Field label="Description">
-            <textarea className="input" rows={2} value={r.blurb} onChange={e => set("blurb", e.target.value)} placeholder="What this round is about. One or two sentences." />
+            <textarea className="input" rows={2} value={r.blurb} onChange={e => set("blurb", e.target.value)} placeholder="What this murmuration is about. One or two sentences." />
           </Field>
 
           <div>
@@ -1896,7 +1896,7 @@ const F2 = (() => {
             </div>
           </div>
 
-          <Field label={r.voting === "quadratic" ? "Budget (murmurs)" : "Votes per holder"}>
+          <Field label={r.voting === "quadratic" ? "Budget (credits)" : "Votes per holder"}>
             <input className="input font-mono" type="number" value={r.budget} onChange={e => set("budget", Number(e.target.value))} />
           </Field>
 
@@ -1945,7 +1945,7 @@ const F2 = (() => {
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-ghost" onClick={onCancel}>Cancel</button>
               <button className="btn btn-ghost" onClick={() => onSave({ ...r, status: "draft" })}>Save draft</button>
-              <button className="btn btn-primary btn-lg" onClick={() => onSave({ ...r, status: "open" })}>{isNew ? "Publish round →" : "Save & publish →"}</button>
+              <button className="btn btn-primary btn-lg" onClick={() => onSave({ ...r, status: "open" })}>{isNew ? "Publish murmuration →" : "Save & publish →"}</button>
             </div>
           </div>
         </div>
