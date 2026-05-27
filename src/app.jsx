@@ -2390,14 +2390,24 @@ function _LiveHolders({ token }) {
       return ok ? re.round : null;
     }).filter(Boolean);
 
-    // Auto-pick a round when results arrive: prefer the round the user
-    // came from (preselectRoundId, set when they clicked "+ Add issue"
-    // inside a vote) if it's eligible; otherwise fall back to the first
-    // eligible round.
+    // Auto-pick a round. If the URL specified one (preselectRoundId), trust
+    // it immediately — eligibility is checked async via on-chain reads that
+    // can hang on flaky wallet providers, and gating roundId on that check
+    // produces a misleading "Pick a vote to submit into" error when submit
+    // fires before eligibility has resolved. The _preselectClosed /
+    // _preselectIneligible short-circuits below render the right message
+    // once eligibility actually resolves; until then, roundId being set
+    // means the submit path gets to a meaningful failure instead of a
+    // spurious validation error.
     useEffect(() => {
-      if (eligibleRounds.length === 0 || roundId) return;
-      const preselected = preselectRoundId && eligibleRounds.find((r) => r.id === preselectRoundId);
-      setRoundId(preselected ? preselected.id : eligibleRounds[0].id);
+      if (roundId) return;
+      if (preselectRoundId) {
+        setRoundId(preselectRoundId);
+        return;
+      }
+      if (eligibleRounds.length > 0) {
+        setRoundId(eligibleRounds[0].id);
+      }
     }, [eligibleRounds.length, roundId, preselectRoundId]);
     const _eligibilityLoading = !!address && _eligibilityCalls.length > 0 && !_eligibilityBalances;
     const _hasOpenRoundsButNoneEligible = _openRounds.length > 0 && eligibleRounds.length === 0 && !_eligibilityLoading;
