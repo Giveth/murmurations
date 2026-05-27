@@ -25,14 +25,17 @@ import {
   concat,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { arbitrum } from "viem/chains";
+import { arbitrum, mainnet } from "viem/chains";
 
 // Ballots and proposals now live in Postgres via server/db.mjs.
 
-// BUIDLER badge — eligibility token. Hardcoded for now; lift to config
-// when there's more than one supported eligibility token.
+// BUIDLER badge — Arbitrum test eligibility token (dev rounds).
 const BUIDLER_CONTRACT = "0x32d664ca9ea4bad60b2b8ed61dec30692df43ac9";
 const BUIDLER_CHAIN = arbitrum;
+
+// Public ETHSecurity Badge — production eligibility token on mainnet.
+// Same contract surfaced client-side as PUBLIC_BADGE_CONTRACT in main.tsx.
+const PUBLIC_BADGE_CONTRACT = "0xf67c0ade41c607efebf198f9d6065ab1ec5ad4cd";
 
 const ERC721_BALANCE_OF_ABI = [
   {
@@ -44,7 +47,17 @@ const ERC721_BALANCE_OF_ABI = [
   },
 ];
 
-const onChainClient = createPublicClient({ chain: BUIDLER_CHAIN, transport: http() });
+// One viem client per eligibility-token chain — eligibility tokens can
+// live on different chains (BUIDLER on Arbitrum, ETHSecurity Badge on
+// mainnet), so the balanceOf read needs to route to the right RPC.
+const chainClients = new Map();
+function getChainClient(chain) {
+  if (!chainClients.has(chain.id)) {
+    chainClients.set(chain.id, createPublicClient({ chain, transport: http() }));
+  }
+  return chainClients.get(chain.id);
+}
+const onChainClient = getChainClient(BUIDLER_CHAIN);
 
 // TheDAOLogTallyCommit deploy — admin = deployer wallet. Used at vote
 // close to anchor a Merkle root of the ballots on-chain.
@@ -577,7 +590,16 @@ app.post("/api/proposals", async (req, reply) => {
 // our hardcoded registry (the BUIDLER badge). Once the registry is
 // shared between server + client, look up via that.
 const KNOWN_ELIGIBILITY_TOKENS = {
-  "tok-buidler": { address: "0x32d664ca9ea4bad60b2b8ed61dec30692df43ac9", chain: BUIDLER_CHAIN },
+  "tok-buidler": { address: BUIDLER_CONTRACT, chain: BUIDLER_CHAIN },
+  // Maps the in-memory tokenId admins generate when they add the
+  // Public ETHSecurity Badge through the round-create UI. The client-
+  // side token registry is in-memory only (not persisted to DB / not
+  // propagated to the server), so anything created there only works at
+  // submit time if the server also knows the mapping. Temporary band-
+  // aid; the structural fix is moving the registry into the DB and
+  // having the proposal carry the eligibility-token ADDRESS directly
+  // instead of an opaque id.
+  "tok-mp1otry2": { address: PUBLIC_BADGE_CONTRACT, chain: mainnet },
 };
 // Proposals created before the tokenId field landed (and any future
 // proposal with no explicit eligibility token) fall back to BUIDLER.
@@ -657,7 +679,7 @@ app.post("/api/proposals/:id/options", async (req, reply) => {
     }
     let badgeBalance;
     try {
-      badgeBalance = await onChainClient.readContract({
+      badgeBalance = await getChainClient(tokenSpec.chain).readContract({
         address: tokenSpec.address,
         abi: ERC721_BALANCE_OF_ABI,
         functionName: "balanceOf",
