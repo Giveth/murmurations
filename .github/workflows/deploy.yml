@@ -86,12 +86,38 @@ jobs:
           script: |
             set -euo pipefail
 
+            if [ -z "${DEPLOY_PATH:-}" ]; then
+              echo "VPS_DEPLOY_PATH is not set."
+              exit 1
+            fi
+
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              mkdir -p "$DEPLOY_PATH"
+            fi
+
             cd "$DEPLOY_PATH"
 
-            if [ -d .git ]; then
+            if [ ! -d .git ]; then
+              if [ -n "$(find . -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+                echo "VPS_DEPLOY_PATH exists but is not an empty git checkout."
+                echo "Move existing files aside or set VPS_DEPLOY_PATH to an empty deploy directory."
+                exit 1
+              fi
+              git clone https://github.com/Giveth/thedaolog.git .
+            else
               git fetch origin main
               git checkout main
               git pull --ff-only origin main
+            fi
+
+            if [ ! -f docker-compose.yml ]; then
+              echo "docker-compose.yml not found in VPS_DEPLOY_PATH."
+              exit 1
+            fi
+
+            if [ ! -f .env ]; then
+              echo ".env not found in VPS_DEPLOY_PATH. Add production secrets before deploying."
+              exit 1
             fi
 
             if [ -n "${GHCR_READ_TOKEN:-}" ]; then
