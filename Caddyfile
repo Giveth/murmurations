@@ -1,0 +1,25 @@
+# Caddy reverse proxy for theDAO/log.
+#
+# SITE_ADDRESS controls the site block:
+#   - Local dev:  ":80"          (plain HTTP, no cert)
+#   - Local TLS:  "localhost"    (Caddy's internal self-signed cert on :443)
+#   - Production: "thedaolog.giveth.io"  (automatic Let's Encrypt TLS)
+#
+# Caddy serves the built SPA from /srv and reverse-proxies /api/* to the
+# Fastify app container on its internal port 7101.
+
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	# API traffic goes to the Node/Fastify service over the internal network.
+	handle /api/* {
+		reverse_proxy app:7101
+	}
+
+	# Everything else is the static SPA with history-API fallback.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
