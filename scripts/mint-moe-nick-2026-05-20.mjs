@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import {
   createPublicClient,
   createWalletClient,
@@ -9,8 +8,9 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
+import { readDeployerKey } from "./deployer-key.mjs";
 
-const { privateKey } = JSON.parse(fs.readFileSync("C:/Users/Xerxes/Xerxes-Claude/.secrets/thedaolog_deployer.json", "utf8"));
+const { privateKey } = readDeployerKey();
 const account = privateKeyToAccount(privateKey);
 const CONTRACT = "0x32d664ca9ea4bad60b2b8ed61dec30692df43ac9";
 

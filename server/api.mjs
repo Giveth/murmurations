@@ -11,9 +11,9 @@
 //
 // Run:  node server/api.mjs
 // Port: 7101  (vite proxies /api/* → here)
+import "dotenv/config";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { readFile } from "node:fs/promises";
 import {
   createPublicClient,
   createWalletClient,
@@ -95,13 +95,7 @@ const TALLY_COMMIT_ABI = [
 let _pinataJwt = null;
 async function loadPinataJwt() {
   if (_pinataJwt !== null) return _pinataJwt;
-  try {
-    const { readFile } = await import("node:fs/promises");
-    const env = JSON.parse(await readFile("C:/Users/Xerxes/Xerxes-Claude/.secrets/env.json", "utf8"));
-    _pinataJwt = env.PINATA_JWT || "";
-  } catch {
-    _pinataJwt = "";
-  }
+  _pinataJwt = process.env.PINATA_JWT || "";
   return _pinataJwt;
 }
 async function pinToIpfs(name, contentObj) {
@@ -138,16 +132,10 @@ async function pinToIpfs(name, contentObj) {
 let _ghConfig = null;
 async function loadGithubConfig() {
   if (_ghConfig !== null) return _ghConfig;
-  try {
-    const { readFile } = await import("node:fs/promises");
-    const env = JSON.parse(await readFile("C:/Users/Xerxes/Xerxes-Claude/.secrets/env.json", "utf8"));
-    _ghConfig = {
-      token: env.GITHUB_TOKEN || "",
-      repo: env.THEDAOLOG_GITHUB_REPO || "",
-    };
-  } catch {
-    _ghConfig = { token: "", repo: "" };
-  }
+  _ghConfig = {
+    token: process.env.GITHUB_TOKEN || "",
+    repo: process.env.THEDAOLOG_GITHUB_REPO || "",
+  };
   return _ghConfig;
 }
 async function ghFetch(path, init = {}) {
@@ -221,11 +209,16 @@ async function ghAddLabels(owner, repo, number, labels) {
 
 // Deployer / admin wallet — used to send the commit tx. Loaded once.
 let _deployerAccount = null;
+function normalizePrivateKey(privateKey) {
+  if (!privateKey) return "";
+  return privateKey.startsWith("0x") ? privateKey : `0x${privateKey}`;
+}
 async function getDeployerAccount() {
   if (_deployerAccount) return _deployerAccount;
-  const keyFile = "C:\\Users\\Xerxes\\Xerxes-Claude\\.secrets\\thedaolog_deployer.json";
-  const { readFile } = await import("node:fs/promises");
-  const { privateKey } = JSON.parse(await readFile(keyFile, "utf8"));
+  const privateKey = normalizePrivateKey(process.env.DEPLOYER_PRIVATE_KEY);
+  if (!privateKey) {
+    throw new Error("DEPLOYER_PRIVATE_KEY is required to commit roots on-chain");
+  }
   _deployerAccount = privateKeyToAccount(privateKey);
   return _deployerAccount;
 }
@@ -1091,5 +1084,6 @@ app.post("/api/proposals/:id/commit", async (req, reply) => {
 });
 
 const PORT = Number(process.env.PORT ?? 7101);
-await app.listen({ port: PORT, host: "127.0.0.1" });
+const HOST = process.env.HOST ?? "127.0.0.1";
+await app.listen({ port: PORT, host: HOST });
 app.log.info(`thedaolog ballot api on :${PORT}`);

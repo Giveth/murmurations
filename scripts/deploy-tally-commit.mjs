@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import solc from "solc";
+import { getContractsLogFile, readDeployerKey } from "./deployer-key.mjs";
 import {
   createPublicClient,
   createWalletClient,
@@ -16,7 +17,6 @@ import { arbitrum } from "viem/chains";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
-const KEY_FILE = "C:\\Users\\Xerxes\\Xerxes-Claude\\.secrets\\thedaolog_deployer.json";
 
 const sourcePath = path.join(ROOT, "contracts", "TheDAOLogTallyCommit.sol");
 const source = fs.readFileSync(sourcePath, "utf8");
@@ -39,9 +39,9 @@ const abi = c.abi;
 const bytecode = "0x" + c.evm.bytecode.object;
 console.log("  bytecode size:", (bytecode.length - 2) / 2, "bytes");
 
-const { privateKey, address: deployerAddress } = JSON.parse(fs.readFileSync(KEY_FILE, "utf8"));
+const { privateKey, address: deployerAddress } = readDeployerKey();
 const account = privateKeyToAccount(privateKey);
-if (account.address.toLowerCase() !== deployerAddress.toLowerCase()) {
+if (deployerAddress && account.address.toLowerCase() !== deployerAddress.toLowerCase()) {
   throw new Error(`Key file address mismatch: ${account.address} vs ${deployerAddress}`);
 }
 
@@ -65,7 +65,8 @@ console.log(`✅ deployed at ${receipt.contractAddress}`);
 console.log(`   gas: ${receipt.gasUsed}  cost: ${formatEther(receipt.gasUsed * receipt.effectiveGasPrice)} ETH`);
 
 // Append to contracts log alongside the BUIDLER badge
-const logFile = "C:\\Users\\Xerxes\\Xerxes-Claude\\.secrets\\thedaolog_contracts.json";
+const logFile = getContractsLogFile();
+fs.mkdirSync(path.dirname(logFile), { recursive: true });
 const log = fs.existsSync(logFile) ? JSON.parse(fs.readFileSync(logFile, "utf8")) : { contracts: [] };
 log.contracts.push({
   name: "TheDAOLogTallyCommit",

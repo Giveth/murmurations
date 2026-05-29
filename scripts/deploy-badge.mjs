@@ -1,5 +1,5 @@
 // Deploy TheDAOSecurityBadge to Arbitrum One. Reads the deployer key
-// from .secrets/thedaolog_deployer.json. Idempotent-ish: prints address
+// from DEPLOYER_PRIVATE_KEY or DEPLOYER_KEY_FILE. Idempotent-ish: prints address
 // + tx hash + Arbiscan link on success. Run this once per chain.
 //
 // Usage: node scripts/deploy-badge.mjs
@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import solc from "solc";
+import { getContractsLogFile, readDeployerKey } from "./deployer-key.mjs";
 import {
   createPublicClient,
   createWalletClient,
@@ -23,7 +24,6 @@ const ROOT = path.resolve(__dirname, "..");
 
 const ADMIN = process.env.ADMIN_ADDRESS ?? "0x72315dddeb862cD484b9F37d37952eC9080557cd";
 const METADATA_URI = process.env.METADATA_URI ?? "https://desktop-dvvupq4.tail301743.ts.net:10000/badge.json";
-const KEY_FILE = "C:\\Users\\Xerxes\\Xerxes-Claude\\.secrets\\thedaolog_deployer.json";
 
 // ---- compile ----
 const sourcePath = path.join(ROOT, "contracts", "TheDAOSecurityBadge.sol");
@@ -66,9 +66,9 @@ const bytecode = "0x" + c.evm.bytecode.object;
 console.log("  bytecode size:", (bytecode.length - 2) / 2, "bytes");
 
 // ---- wallet ----
-const { privateKey, address: deployerAddress } = JSON.parse(fs.readFileSync(KEY_FILE, "utf8"));
+const { privateKey, address: deployerAddress } = readDeployerKey();
 const account = privateKeyToAccount(privateKey);
-if (account.address.toLowerCase() !== deployerAddress.toLowerCase()) {
+if (deployerAddress && account.address.toLowerCase() !== deployerAddress.toLowerCase()) {
   throw new Error(`Key file address mismatch: ${account.address} vs ${deployerAddress}`);
 }
 
@@ -113,7 +113,8 @@ const cost = receipt.gasUsed * receipt.effectiveGasPrice;
 console.log(`   total cost: ${formatEther(cost)} ETH`);
 
 // ---- save deploy log ----
-const logFile = path.join("C:\\Users\\Xerxes\\Xerxes-Claude\\.secrets", "thedaolog_contracts.json");
+const logFile = getContractsLogFile();
+fs.mkdirSync(path.dirname(logFile), { recursive: true });
 let log = { contracts: [] };
 if (fs.existsSync(logFile)) log = JSON.parse(fs.readFileSync(logFile, "utf8"));
 log.contracts.push({

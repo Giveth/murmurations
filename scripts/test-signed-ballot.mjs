@@ -1,14 +1,14 @@
 // End-to-end test: create a proposal + sign + post a ballot.
 // Validates that the API's EIP-712 verification + QV checks + on-chain
 // badge eligibility all line up. Run from inside thedaolog-vite/.
-import fs from "node:fs";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
+import { readDeployerKey } from "./deployer-key.mjs";
 
 // Use the deployer wallet — it's NOT a badgeholder, so we expect the
 // `not_a_badgeholder` failure path. To exercise the success path we'd
 // sign with one of the addresses Zep minted to.
-const { privateKey } = JSON.parse(fs.readFileSync("C:/Users/Xerxes/Xerxes-Claude/.secrets/thedaolog_deployer.json", "utf8"));
+const { privateKey } = readDeployerKey();
 const account = privateKeyToAccount(privateKey);
 console.log("test signer:", account.address);
 
