@@ -7,24 +7,28 @@ import {
   rainbowWallet,
   frameWallet,
   safeWallet,
+  walletConnectWallet,
 } from "@rainbow-me/rainbowkit/wallets";
 import { createConfig, http } from "wagmi";
 import { mainnet, arbitrum } from "wagmi/chains";
 
 // WalletConnect projectId. The placeholder is enough for injected
 // wallets (Rabby, MetaMask, Frame, etc.) to work — those don't go
-// through the WalletConnect relay. To enable the WalletConnect QR
-// flow for mobile wallets, drop a real projectId from
-// https://cloud.reown.com into VITE_WALLETCONNECT_PROJECT_ID.
+// through the WalletConnect relay. The WalletConnect QR flow for mobile
+// wallets needs a real projectId from https://cloud.reown.com, set via
+// VITE_WALLETCONNECT_PROJECT_ID (baked in at build time by Vite).
 const projectId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "PLACEHOLDER";
 
-// walletConnectWallet is intentionally NOT in the connectors list. The
-// Giveth Reown project (the only one we have a projectId for) doesn't
-// have this app's tunnel hostname on its allowed-origins list, so the
-// WalletConnect relay returns 403 and the modal silently does nothing
-// when the user clicks WalletConnect. Until a Reown project is
-// provisioned with the murmurations origin allowlisted, the WC option
-// is removed from the modal to avoid the dead-click UX.
+// Only offer the WalletConnect option when a real projectId is present.
+// Without one (or with a project whose allowed-origins list is missing
+// this app's hostname) the WC relay returns 403 and the modal silently
+// does nothing — a dead click. Gating on a real projectId keeps that
+// option out of dev/placeholder builds while enabling it in production.
+const hasRealProjectId = projectId !== "PLACEHOLDER" && projectId.length > 0;
+
+const otherWallets = [rainbowWallet, coinbaseWallet, frameWallet, safeWallet];
+if (hasRealProjectId) otherWallets.push(walletConnectWallet);
+
 const connectors = connectorsForWallets(
   [
     {
@@ -33,7 +37,7 @@ const connectors = connectorsForWallets(
     },
     {
       groupName: "Other",
-      wallets: [rainbowWallet, coinbaseWallet, frameWallet, safeWallet],
+      wallets: otherWallets,
     },
   ],
   { appName: "theDAO/log", projectId },
