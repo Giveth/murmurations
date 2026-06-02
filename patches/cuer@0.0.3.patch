@@ -1,0 +1,26 @@
+diff --git a/QrCode.ts b/QrCode.ts
+index 9d29de4c7e0d6e1088af98f45417a7ed0e0ef1e7..c0b425733521ad4270e858eaa61c989330db0fda 100644
+--- a/QrCode.ts
++++ b/QrCode.ts
+@@ -11,7 +11,7 @@ export function create(value: string, options: QrCode.Options = {}): QrCode {
+   const { errorCorrection, version } = options
+ 
+   const grid = encodeQR(value, 'raw', {
+-    border: 0,
++    border: 1,
+     ecc: errorCorrection,
+     scale: 1,
+     version: version,
+diff --git a/_dist/QrCode.js b/_dist/QrCode.js
+index b1806526c3d100ca6f1e9259b4dfbcd416a33927..c594a0cc0f948a225302caa6dcdcf601ac804fbd 100644
+--- a/_dist/QrCode.js
++++ b/_dist/QrCode.js
+@@ -2,7 +2,7 @@ import { encodeQR } from 'qr';
+ export function create(value, options = {}) {
+     const { errorCorrection, version } = options;
+     const grid = encodeQR(value, 'raw', {
+-        border: 0,
++        border: 1,
+         ecc: errorCorrection,
+         scale: 1,
+         version: version,
