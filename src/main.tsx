@@ -22,9 +22,20 @@ import {
 
 // Hardcoded admin wallets. Lowercased so the comparison against
 // `useAccount().address` is case-insensitive.
-const ADMIN_ADDRESSES = new Set<string>([
-  "0x839395e20bbb182fa440d08f850e6c7a8f6f0780",
-]);
+//
+// Extra admins can be added per-environment via VITE_EXTRA_ADMIN_ADDRESSES
+// (comma-separated). This is baked in at build time. PROD leaves it unset,
+// so prod admins = just the hardcoded list below. Staging sets it in its
+// gitignored .env to add test admins WITHOUT shipping them to prod.
+const ADMIN_ADDRESSES = new Set<string>(
+  [
+    "0x839395e20bbb182fa440d08f850e6c7a8f6f0780",
+    ...String(import.meta.env.VITE_EXTRA_ADMIN_ADDRESSES || "")
+      .split(",")
+      .map((a) => a.trim().toLowerCase())
+      .filter(Boolean),
+  ],
+);
 
 // How long to wait on a "connecting" status before assuming the wallet
 // isn't going to respond (most often: extension is locked and the
@@ -411,7 +422,7 @@ ReactDOM.createRoot(document.getElementById("app")!).render(
     <AppErrorBoundary>
       <WagmiProvider config={wagmiConfig}>
         <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider theme={darkTheme()} appInfo={{ appName: "theDAO/log" }}>
+          <RainbowKitProvider theme={darkTheme()} appInfo={{ appName: "Murmuration" }}>
             <WalletGate />
           </RainbowKitProvider>
         </QueryClientProvider>
