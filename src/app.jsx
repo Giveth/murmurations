@@ -731,6 +731,78 @@ function _LiveHolders({ token }) {
   const canSubmit = (r, holdsBadge) => holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder");
   const canAdmin  = (r) => r === "admin";
 
+  // Injects a "Copy connection link" button INTO RainbowKit's WalletConnect
+  // QR modal, right under its "Need the official WalletConnect modal? OPEN"
+  // prompt. The official reown AppKit modal (that OPEN button) is flaky
+  // (lazy-loaded web components + reliance on reown's hosted services), so
+  // this gives a deterministic way to copy the wc: pairing URI for
+  // impersonator.xyz / any wallet's paste field. We capture the live URI
+  // from the connector's `display_uri` event and add the button via a
+  // MutationObserver — no AppKit, no extra chrome in the app header.
+  // Renders nothing; mounted once inside F2App.
+  function WcLinkInjector() {
+    const { connectors } = wagmi.useConnect();
+    useEffect(() => {
+      const wc = connectors.find((c) => c.type === "walletConnect" || c.id === "walletConnect");
+      if (!wc) return undefined;
+      const st = { uri: "" };
+      let provider, onUri, observer;
+      (async () => {
+        try {
+          provider = await wc.getProvider();
+          onUri = (u) => { st.uri = u; };
+          provider.on("display_uri", onUri);
+        } catch { /* noop */ }
+      })();
+      const inject = () => {
+        if (!st.uri) return;
+        // Find RainbowKit's "official WalletConnect modal?" prompt — the
+        // smallest element that mentions it — and drop our row right after.
+        let prompt = null;
+        for (const n of document.querySelectorAll("div, p, span, a, button")) {
+          if (/official WalletConnect modal/i.test(n.textContent || "") && n.querySelectorAll("*").length <= 4) { prompt = n; break; }
+        }
+        if (!prompt) return;
+        const host = prompt.parentElement;
+        if (!host || host.querySelector("[data-wc-copy]")) return;
+        const row = document.createElement("div");
+        row.setAttribute("data-wc-copy", "1");
+        row.style.cssText = "margin:8px 0 2px;display:flex;justify-content:center;";
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "Copy connection link";
+        btn.style.cssText = "font-family:Inter,sans-serif;font-weight:800;font-size:15px;color:#2C5EB6;background:transparent;border:none;cursor:pointer;text-decoration:underline;padding:4px 6px;";
+        btn.addEventListener("click", async (e) => {
+          e.preventDefault(); e.stopPropagation();
+          try { await navigator.clipboard.writeText(st.uri); btn.textContent = "✓ Link copied"; setTimeout(() => { btn.textContent = "Copy connection link"; }, 2000); } catch { /* noop */ }
+        });
+        row.appendChild(btn);
+        // Place it right BELOW the "official WalletConnect modal? OPEN" line so
+        // OPEN stays visible; bold so it isn't missed. (Per Zep 2026-06-19.)
+        prompt.insertAdjacentElement("afterend", row);
+        // RainbowKit's QR card is fixed-height and clips the bottom edge, so
+        // the new row hangs off the modal. Grow the few fixed-height ancestors
+        // just enough to fit it. Runs ONCE (the dedup guard above stops
+        // re-entry), so heights don't creep on repeated observer callbacks.
+        let up = row.parentElement, depth = 0;
+        while (up && depth < 9) {
+          const cs = getComputedStyle(up);
+          if (cs.maxHeight !== "none" && parseFloat(cs.maxHeight) > 0) up.style.maxHeight = (parseFloat(cs.maxHeight) + 46) + "px";
+          if (parseFloat(cs.height) > 0 && up.scrollHeight > up.clientHeight + 1) up.style.height = (up.scrollHeight + 2) + "px";
+          up = up.parentElement; depth++;
+        }
+      };
+      observer = new MutationObserver(() => inject());
+      observer.observe(document.body, { childList: true, subtree: true });
+      inject();
+      return () => {
+        try { provider && onUri && provider.removeListener && provider.removeListener("display_uri", onUri); } catch { /* noop */ }
+        try { observer && observer.disconnect(); } catch { /* noop */ }
+      };
+    }, [connectors]);
+    return null;
+  }
+
   // ── Top chrome ───────────────────────────────────────────────────
   function F2Chrome({ active, onNav, role, address, isIncognito, isPublicBadgeholder, isBadgeholder, onDisconnect, onConnectClick, connected, children }) {
     // Submit tab intentionally omitted — issues are added from inside the
@@ -3541,6 +3613,7 @@ function _LiveHolders({ token }) {
 
     return (
       <F2Chrome active={screen === "round" || screen === "issue" ? "rounds" : screen} onNav={nav} role={role} address={address} isIncognito={isIncognito} isPublicBadgeholder={isPublicBadgeholder} isBadgeholder={isBadgeholder} onDisconnect={onDisconnect} onConnectClick={onConnectClick} connected={!!address}>
+        <WcLinkInjector />
         {screen === "rounds" && (
           <F2RoundsList
             rounds={rounds}
