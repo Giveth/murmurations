@@ -1,0 +1,13 @@
+.git
+.cursor
+.DS_Store
+
+node_modules
+.pnpm-store
+dist
+.vite
+data
+
+.env
+.env.*
+*.log

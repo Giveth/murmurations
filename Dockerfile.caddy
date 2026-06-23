@@ -1,0 +1,29 @@
+# Builds the Vite SPA, then bakes it into a Caddy image that serves the
+# static assets and reverse-proxies /api/* to the app container.
+
+FROM node:22-alpine AS build
+
+WORKDIR /app
+RUN corepack enable
+RUN apk add --no-cache python3 make g++
+
+COPY package.json pnpm-lock.yaml ./
+# patches/ holds pnpm patch files referenced by package.json's
+# patchedDependencies (the cuer border:0->1 fix that makes the
+# WalletConnect QR render). pnpm reads them during install, so they must
+# be copied before this step or it fails with ENOENT on the .patch file.
+COPY patches ./patches
+RUN pnpm install --frozen-lockfile
+
+COPY . .
+
+# Optional build-time injection for the WalletConnect flow.
+ARG VITE_WALLETCONNECT_PROJECT_ID
+ENV VITE_WALLETCONNECT_PROJECT_ID=$VITE_WALLETCONNECT_PROJECT_ID
+
+RUN pnpm build
+
+FROM caddy:2-alpine
+
+COPY Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv

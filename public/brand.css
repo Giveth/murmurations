@@ -1,0 +1,334 @@
+/* theDAO — shared brand tokens */
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* Normalize text selection across browsers so the highlight is visible
+   on both dark and light surfaces regardless of OS / browser defaults. */
+::selection { background: rgba(255, 60, 56, 0.55); color: white; }
+::-moz-selection { background: rgba(255, 60, 56, 0.55); color: white; }
+
+:root {
+  /* Core brand — calibrated to the Ethereum Security Badge image */
+  --dao-blue-950: rgb(20, 46, 74);
+  --dao-blue-900: rgb(26, 60, 92);
+  --dao-blue-800: rgb(31, 75, 115);
+  --dao-blue-700: rgb(46, 105, 154);
+  --dao-blue-600: rgb(72, 134, 184);
+  --dao-blue-500: rgb(108, 162, 204);
+  --dao-blue-400: rgb(150, 191, 222);
+  --dao-blue-200: rgb(205, 224, 240);
+
+  /* Gold — pulled from the shield in the badge image */
+  --dao-gold-100: rgb(255, 240, 188);
+  --dao-gold-300: rgb(245, 210, 110);
+  --dao-gold-500: rgb(225, 175, 55);
+  --dao-gold-600: rgb(195, 142, 32);
+  --dao-gold-800: rgb(120, 82, 18);
+
+  --dao-red:      #FF3C38;
+  --dao-red-dim:  #DC2F2B;
+  --dao-red-soft: rgb(255, 165, 163);
+
+  --dao-green:    rgb(45, 136, 64);
+  --dao-green-light: rgb(115, 213, 118);
+
+  --dao-ink:      rgb(11, 11, 11);
+  --dao-paper:    rgb(254, 254, 254);
+  --dao-paper-2:  rgb(244, 246, 249);
+  --dao-stroke:   rgba(11, 11, 11, 0.12);
+  --dao-stroke-2: rgba(11, 11, 11, 0.06);
+
+  /* On-blue */
+  --on-blue-strong: rgba(255, 255, 255, 0.96);
+  --on-blue-soft:   rgba(255, 255, 255, 0.62);
+  --on-blue-faint:  rgba(255, 255, 255, 0.18);
+
+  --shadow-soft: 0px 1px 2px rgba(0,0,0,0.05), 0px 8px 24px rgba(7,9,46,0.08);
+  --shadow-deep: 0px 4px 6px -2px rgba(0,0,0,0.1), 0px 24px 48px -12px rgba(7,9,46,0.25);
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+
+  /* Semantic theme tokens — these swap when `.dark-app` is the ancestor.
+     Always use these (not raw colors) for app text / surfaces so dark mode
+     swaps cleanly. Light defaults below; dark overrides further down. */
+  --surface-app:      var(--dao-paper);
+  --surface-card:     #ffffff;
+  --surface-elevated: var(--dao-paper-2);
+  --surface-pop:      var(--dao-paper-2);
+  --text-primary:     var(--dao-blue-900);
+  --text-secondary:   var(--dao-blue-800);
+  --text-muted:       rgba(11, 11, 11, 0.62);
+  --text-faint:       rgba(11, 11, 11, 0.45);
+  --stroke-line:      var(--dao-stroke-2);
+  --stroke-line-2:    var(--dao-stroke);
+}
+
+/* Dark mode — applied when an ancestor element has `.dark-app`.
+   Palette pulled verbatim from thedao.fund so the app feels like a
+   continuation of the marketing site, not a separate product. */
+.dark-app {
+  --surface-app:      #28567a;   /* dao-blue (thedao.fund page bg) */
+  --surface-card:     #2c5e86;   /* dao-blue-light (raised cards) */
+  --surface-elevated: #1f435f;   /* dao-blue-dark (header / recessed) */
+  --surface-pop:      rgba(255, 255, 255, 0.06);
+  --text-primary:     #ffffff;
+  --text-secondary:   rgba(255, 255, 255, 0.88);
+  --text-muted:       rgba(255, 255, 255, 0.62);
+  --text-faint:       rgba(255, 255, 255, 0.55);
+  --stroke-line:      rgba(255, 255, 255, 0.08);
+  --stroke-line-2:    rgba(255, 255, 255, 0.14);
+  /* Also flip the brand vars for any leftover references */
+  --dao-paper:        #28567a;
+  --dao-paper-2:      #2c5e86;
+  --dao-ink:          #ffffff;
+  --dao-stroke:       rgba(255, 255, 255, 0.14);
+  --dao-stroke-2:     rgba(255, 255, 255, 0.08);
+  /* Brighter green to match thedao.fund's accent */
+  --dao-green:        #5cb75a;
+  --dao-green-light:  rgb(140, 220, 140);
+  background: #28567a;
+  color: #ffffff;
+  /* Tells the browser this subtree is dark — Chromium/Firefox will pick
+     dark variants for native UI: select dropdown popups, scrollbars,
+     date pickers, etc. Without this they fall back to the OS default
+     (white on dark navy = unreadable). */
+  color-scheme: dark;
+}
+
+/* Belt-and-suspenders option styling — Chromium honors these on the
+   `<option>` element directly even though the popup paint is native. */
+.dark-app .input option,
+.dark-app select.input option {
+  background-color: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+/* Dark-mode adjustments for shared component classes */
+.dark-app .input {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  border-color: var(--stroke-line-2);
+}
+.dark-app .input::placeholder { color: var(--text-faint); }
+.dark-app .input:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.08);
+}
+.dark-app .btn-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid var(--stroke-line-2);
+}
+.dark-app .btn-secondary:hover { background: rgba(255, 255, 255, 0.14); }
+.dark-app .tag-mono {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--text-secondary);
+}
+
+/* Role chip in dark mode — keep colored dot, light up text so it stays
+   readable on the navy header. Inline `color: var(--dao-blue-800)` etc.
+   would otherwise render dark-on-dark. */
+.dark-app .role-chip { color: rgba(255, 255, 255, 0.92) !important; }
+.dark-app .role-chip.role-visitor { background: rgba(255, 255, 255, 0.10) !important; }
+.dark-app .role-chip.role-badgeholder { background: rgba(245, 210, 110, 0.20) !important; color: rgb(245, 210, 110) !important; }
+.dark-app .role-chip.role-admin { background: rgba(255, 60, 56, 0.20) !important; color: rgb(255, 200, 200) !important; }
+
+/* Severity tags — same problem as role chips. Inline colors are tuned for
+   light bg so they'd render invisibly on navy. Brighten per-severity. */
+.dark-app .sev-tag.sev-critical { background: rgba(255, 60, 56, 0.22) !important; color: rgb(255, 180, 180) !important; }
+.dark-app .sev-tag.sev-high     { background: rgba(247, 144, 9, 0.22) !important; color: rgb(255, 200, 130) !important; }
+.dark-app .sev-tag.sev-medium   { background: rgba(244, 198, 36, 0.22) !important; color: rgb(255, 230, 140) !important; }
+.dark-app .sev-tag.sev-low      { background: rgba(123, 179, 224, 0.25) !important; color: rgb(180, 220, 255) !important; }
+.dark-app .sev-tag.sev-info     { background: rgba(255, 255, 255, 0.10) !important; color: rgba(255, 255, 255, 0.82) !important; }
+
+* { box-sizing: border-box; }
+.font-display { font-family: 'Inter Tight', sans-serif; letter-spacing: -0.01em; }
+.font-body    { font-family: 'Inter', sans-serif; }
+.font-mono    { font-family: 'JetBrains Mono', monospace; }
+
+/* The 'D' logo lockup */
+.dao-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dao-red);
+  border-radius: 7.65%;
+  position: relative;
+  flex-shrink: 0;
+}
+.dao-logo svg { width: 55%; height: 59%; }
+.dao-logo::after {
+  content: "";
+  position: absolute;
+  left: 22.6%;
+  top: 53.4%;
+  width: 30.9%;
+  height: 5.5%;
+  background: white;
+}
+
+/* Severity dots */
+.sev-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.sev-critical { background: var(--dao-red); box-shadow: 0 0 0 3px rgba(255,60,56,0.18); }
+.sev-high     { background: rgb(247, 144, 9); }
+.sev-medium   { background: rgb(244, 198, 36); }
+.sev-low      { background: var(--dao-blue-400); }
+.sev-info     { background: rgb(160, 168, 180); }
+
+/* theDAO Security Badge — gold shield on rich blue, matching the brand image */
+.dao-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 45%, rgb(44,94,134) 0%, var(--dao-blue-900) 55%, var(--dao-blue-950) 100%);
+  flex-shrink: 0;
+  overflow: hidden;
+  box-shadow:
+    inset 0 0 0 1px rgba(162,238,250,0.18),
+    inset 0 0 24px rgba(132,213,230,0.10),
+    0 6px 18px -8px rgba(0,0,0,0.55);
+}
+.dao-badge::before {
+  /* outer faint cyan ring */
+  content: "";
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  border: 1px solid rgba(162,238,250,0.30);
+}
+.dao-badge::after {
+  /* inner cyan ring */
+  content: "";
+  position: absolute;
+  inset: 16%;
+  border-radius: 50%;
+  border: 1px solid rgba(162,238,250,0.20);
+}
+.dao-badge img.shield,
+.dao-badge svg.shield {
+  width: 72%;
+  height: auto;
+  position: relative;
+  z-index: 2;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.55));
+}
+
+/* theDAO squares backdrop — translucent floating squares on blue */
+.dao-squares-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.dao-squares-bg .sq {
+  position: absolute;
+  border-radius: 6px;
+}
+
+/* Branded blue surface — the "hero" treatment from the image */
+.dao-blue-surface {
+  position: relative;
+  background:
+    radial-gradient(ellipse at 25% 20%, var(--dao-blue-700) 0%, var(--dao-blue-800) 35%, var(--dao-blue-900) 70%, var(--dao-blue-950) 100%);
+  color: white;
+  overflow: hidden;
+}
+
+/* Buttons */
+.btn {
+  font-family: 'Inter Tight', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  border: none; cursor: pointer;
+  padding: 10px 18px;
+  border-radius: var(--r-md);
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: transform .06s ease, background .15s ease, box-shadow .15s ease;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--dao-red); color: white; }
+.btn-primary:hover { background: rgb(235, 50, 46); }
+.btn-secondary { background: white; color: var(--dao-blue-800); border: 1px solid var(--dao-stroke); }
+.btn-secondary:hover { background: var(--dao-paper-2); }
+.btn-ghost { background: transparent; color: var(--on-blue-strong); }
+.btn-ghost:hover { background: var(--on-blue-faint); }
+.btn-blue { background: var(--dao-blue-700); color: white; }
+.btn-blue:hover { background: var(--dao-blue-800); }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn-lg { padding: 14px 24px; font-size: 16px; }
+
+/* Inputs */
+.input {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--dao-stroke);
+  background: white;
+  color: var(--dao-ink);
+  outline: none;
+  width: 100%;
+}
+.input:focus { border-color: var(--dao-blue-700); box-shadow: 0 0 0 3px rgba(44,94,134,0.15); }
+
+/* Pills */
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(40,86,122,0.08);
+  color: var(--dao-blue-800);
+}
+.pill-red   { background: rgba(255,60,56,0.10); color: var(--dao-red-dim); }
+.pill-green { background: rgba(45,136,64,0.10); color: var(--dao-green); }
+.pill-on-blue { background: rgba(255,255,255,0.10); color: var(--on-blue-strong); border: 1px solid var(--on-blue-faint); }
+
+/* Tag mono (severity / chain / area) */
+.tag-mono {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(11,11,11,0.06);
+  color: var(--dao-ink);
+}
+
+.checker-bg {
+  background-image:
+    linear-gradient(45deg, rgba(11,11,11,0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(11,11,11,0.04) 25%, transparent 25%);
+  background-size: 12px 12px;
+}
+
+/* Subtle ASCII texture stripes for placeholders */
+.placeholder-stripes {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(40,86,122,0.06) 0px,
+      rgba(40,86,122,0.06) 1px,
+      transparent 1px,
+      transparent 8px
+    ),
+    var(--dao-paper-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: rgba(40,86,122,0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}

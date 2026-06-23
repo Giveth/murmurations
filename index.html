@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Murmuration — Vote like a flock</title>
+
+<!-- Favicon (red rounded-square Eth diamond) -->
+<link rel="icon" type="image/png" href="/favicon.png" />
+<link rel="apple-touch-icon" href="/favicon.png" />
+
+<!-- OpenGraph (Telegram, Slack, Discord, Facebook, LinkedIn) -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Murmuration" />
+<meta property="og:title" content="Murmuration — Vote like a flock" />
+<meta property="og:description" content="200 experts. Murmuring to one direction. TheDAO's ETHSecurity badge holders coordinate Murmurations — opportunities for the elite group of Ethereum security experts to signal where TheDAO should go." />
+<meta property="og:image" content="/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Murmuration — 200 experts murmuring to one direction" />
+
+<!-- Twitter / X card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Murmuration — Vote like a flock" />
+<meta name="twitter:description" content="200 experts. Murmuring to one direction. TheDAO's ETHSecurity badge holders signal where TheDAO should go." />
+<meta name="twitter:image" content="/og-image.png" />
+
+<meta name="theme-color" content="#28567A" />
+
+<link rel="stylesheet" href="/brand.css" />
+<style>
+  /* Edge-to-edge: kill the browser-default 8px body margin and make the
+     dark brand background extend behind everything so any letterboxing
+     blends in instead of flashing white. */
+  html, body, #app {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--dao-blue-950, #0b1426);
+  }
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    color: white;
+    overflow: hidden;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

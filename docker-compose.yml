@@ -1,0 +1,86 @@
+# Local-dev Postgres + API for theDAO/log.
+#
+# Spin up:   docker compose up -d
+# Tear down: docker compose down
+# Wipe data: docker compose down -v   (drops the volume)
+#
+# The app container uses Docker's internal `db:5432` hostname. Host-side
+# `node server/api.mjs` can still use localhost:15432.
+#
+# a production deploy: ignore this file and point DATABASE_URL at the org's
+# managed Postgres. The schema is auto-applied on first connect by
+# server/db.mjs (CREATE TABLE IF NOT EXISTS), so no separate setup step.
+
+services:
+  # Caddy is the public entrypoint: it terminates TLS, serves the built
+  # SPA, and reverse-proxies /api/* to the app container. Set SITE_ADDRESS
+  # to your domain in prod for automatic Let's Encrypt certs.
+  caddy:
+    image: ghcr.io/giveth/thedaolog-caddy:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    container_name: thedaolog-caddy
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+
+  app:
+    image: ghcr.io/giveth/thedaolog-app:${IMAGE_TAG:-latest}
+    build:
+      context: .
+    container_name: thedaolog-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 7101
+      DATABASE_URL: postgres://thedaolog:thedaolog@db:5432/thedaolog
+      PINATA_JWT: ${PINATA_JWT:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      THEDAOLOG_GITHUB_REPO: ${THEDAOLOG_GITHUB_REPO:-}
+      DEPLOYER_PRIVATE_KEY: ${DEPLOYER_PRIVATE_KEY:-}
+    ports:
+      - "${APP_PORT:-7101}:7101"
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:7101/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  db:
+    image: postgres:16-alpine
+    container_name: thedaolog-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-thedaolog}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-thedaolog}
+      POSTGRES_DB: ${POSTGRES_DB:-thedaolog}
+    # Host port 15432 to avoid clashes with any existing local Postgres
+    # (WSL relay grabs 5432 + 5433 on this Windows box by default). The
+    # default DATABASE_URL in server/db.mjs points at 15432 to match.
+    ports:
+      - "15432:5432"
+    volumes:
+      - thedaolog-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thedaolog -d thedaolog"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  thedaolog-db-data:
+  caddy-data:
+  caddy-config:
