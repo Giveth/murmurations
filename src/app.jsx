@@ -739,6 +739,23 @@ function _LiveHolders({ token }) {
   const canVote   = (r, holdsBadge) => (_DEV && r === "admin") ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
   const canSubmit = (r, holdsBadge) => (_DEV && r === "admin") ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
   const canAdmin  = (r) => r === "admin";
+  // Per-round vote eligibility for the two mainnet ETHSecurity badges. Global
+  // canVote() only knows "holds ANY badge"; a public round needs the PUBLIC
+  // badge specifically and an incognito round needs the PRIVATE one, so e.g.
+  // an incognito holder must read as INELIGIBLE on a public round. Single
+  // source of truth shared by F2RoundDetail and F2IssueDetail so the two
+  // screens can't drift (that drift was the 2026-06-23 phantom-vote bug).
+  const canVoteInRound = (round, { role, isBadgeholder, isPublicBadgeholder, isIncognito, tokens }) => {
+    const _pub  = "0xf67c0ade41c607efebf198f9d6065ab1ec5ad4cd";
+    const _priv = "0x3b49f45ec8796f64febb1ae0f5661791845ce35c";
+    const _tok  = (tokens || []).find((t) => t.id === round?.tokenId);
+    const _addr = String(round?.tokenAddress || (_tok && _tok.address) || "").toLowerCase();
+    if (role !== "admin") {
+      if (_addr === _pub)  return !!isPublicBadgeholder;
+      if (_addr === _priv) return !!isIncognito;
+    }
+    return canVote(role, isBadgeholder);
+  };
 
   // Injects a "Copy connection link" button INTO RainbowKit's WalletConnect
   // QR modal, right under its "Need the official WalletConnect modal? OPEN"
@@ -1880,7 +1897,7 @@ function _LiveHolders({ token }) {
     const _knowsPerRound = _needsPublic || _needsPrivate;
     const _holdsRoundBadge = _needsPublic ? !!isPublicBadgeholder : (_needsPrivate ? !!isIncognito : false);
     // Admins and non-public/private tokens keep the existing global check.
-    const _canVoteHere = (_knowsPerRound && role !== "admin") ? _holdsRoundBadge : canVote(role, isBadgeholder);
+    const _canVoteHere = canVoteInRound(round, { role, isBadgeholder, isPublicBadgeholder, isIncognito, tokens });
     const _canSubmitHere = (_knowsPerRound && role !== "admin") ? _holdsRoundBadge : canSubmit(role, isBadgeholder);
     // Show the "wrong identity — connect your public/incognito address" hint
     // ONLY to wallets that actually hold one of the two ETHSecurity badges
@@ -1974,6 +1991,18 @@ function _LiveHolders({ token }) {
     // when an admin deletes an issue you voted on, the refund banner
     // appears immediately without a manual reload.
     useEffect(() => { _refreshState(); }, [round?.id, address, (round?.issueIds || []).length]);
+    // Wallet switch / disconnect resets the local allocation scratchpad so a
+    // newly-connected (or round-ineligible) address never inherits the
+    // previous wallet's phantom votes. _refreshState (keyed on address too)
+    // re-hydrates from the new address's signed ballot if one exists.
+    // (Griff, 2026-06-23: votes show 0 until someone actually votes.)
+    const _prevAddrRef = useRef(address);
+    useEffect(() => {
+      if (_prevAddrRef.current !== address) {
+        _prevAddrRef.current = address;
+        setAllocations({});
+      }
+    }, [address]);
     const _votedAndLocked = !!_userBallot && !_editingVote;
     const _cancelEdit = () => {
       _setEditingVote(false);
@@ -2292,7 +2321,7 @@ function _LiveHolders({ token }) {
                       onChange={(nv) => setVal(iss.id, nv)}
                       max={sliderMax}
                       scaleMax={round.voting === "quadratic" ? Math.floor(Math.sqrt(round.budget)) : round.budget}
-                      disabled={!canVote(role, isBadgeholder)}
+                      disabled={!_canVoteHere}
                       voting={round.voting}
                     />
                     {round.voting === "quadratic" ? (
@@ -2370,7 +2399,7 @@ function _LiveHolders({ token }) {
                       ? Number(((_userBallot.ballot.allocations || []).find((a) => Number(a.issueId) === Number(iss.id)) || {}).points || 0)
                       : 0;
                     const delta = (v || 0) - prev;
-                    const showDelta = canVote(role, isBadgeholder) && delta !== 0;
+                    const showDelta = _canVoteHere && delta !== 0;
                     const unit = round.voting === "quadratic" ? "pts" : (Number(total) === 1 ? "vote" : "votes");
                     return (
                       <div style={{
@@ -2464,8 +2493,12 @@ function _LiveHolders({ token }) {
     );
   }
 
-  function F2IssueDetail({ issue, round, allocations, setAllocations, role, isBadgeholder, onBack }) {
+  function F2IssueDetail({ issue, round, allocations, setAllocations, role, isBadgeholder, isPublicBadgeholder, isIncognito, tokens, onBack }) {
     const v = allocations[issue.id] || 0;
+    // Per-round eligibility — same gate as the round panel, so an address that
+    // can't vote on this round (e.g. incognito on a public round) can't drag
+    // the slider here either.
+    const _canVoteHere = canVoteInRound(round, { role, isBadgeholder, isPublicBadgeholder, isIncognito, tokens });
     return (
       <div style={{ padding: "32px 40px", maxWidth: 1100, margin: "0 auto" }}>
         <BackButton onBack={onBack} style={{ marginBottom: 16 }} />
@@ -2503,7 +2536,7 @@ function _LiveHolders({ token }) {
                 const nextCost = round.voting === "quadratic" ? (2 * v + 1) : 1;
                 const remaining = budgetForThis - cost;
                 const setSafe = (raw) => {
-                  if (!canVote(role, isBadgeholder)) return;
+                  if (!_canVoteHere) return;
                   let next = raw;
                   const nCost = round.voting === "quadratic" ? next * next : next;
                   if (nCost > budgetForThis) next = maxForThis;
@@ -2516,7 +2549,7 @@ function _LiveHolders({ token }) {
                     <div className="font-display" style={{ fontSize: 56, fontWeight: 700, lineHeight: 1, marginTop: 8 }}>{v}<span style={{ fontSize: 20, color: "var(--on-blue-soft)" }}> {round.voting === "quadratic" ? (v === 1 ? "pt" : "pts") : (v === 1 ? "vote" : "votes")}</span></div>
                     <input
                       type="range" min="0" max={Math.max(maxForThis, 1)} value={Math.min(v, Math.max(maxForThis, 0))}
-                      disabled={!canVote(role, isBadgeholder)}
+                      disabled={!_canVoteHere}
                       onChange={e => setSafe(Number(e.target.value))}
                       style={{ width: "100%", marginTop: 14, accentColor: "var(--dao-red)" }}
                     />
@@ -2550,7 +2583,7 @@ function _LiveHolders({ token }) {
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmuration total</span><span className="font-mono">{Number(issue.totalVotes || 0).toLocaleString()}</span></div>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: "var(--on-blue-soft)" }}>Murmurs</span><span className="font-mono">{issue.voters || 0}</span></div>
                     </div>
-                    {!canVote(role, isBadgeholder) && (
+                    {!_canVoteHere && (
                       <div style={{ marginTop: 14, fontSize: 11, color: "var(--on-blue-soft)", lineHeight: 1.5 }}>
                         Read-only. Connect an ETHSecurity Badge wallet to murmur.
                       </div>
@@ -3887,6 +3920,9 @@ function _LiveHolders({ token }) {
             setAllocations={setAllocations}
             role={role}
             isBadgeholder={isBadgeholder}
+            isPublicBadgeholder={isPublicBadgeholder}
+            isIncognito={isIncognito}
+            tokens={tokens}
             onBack={() => setScreen("round")}
           />
         )}
