@@ -143,6 +143,11 @@ describe("POST /api/proposals/:id/options (add)", () => {
     const s = await makeSubmission(adminAccount, { proposalId: PID, label: "x" });
     expect((await addOption({ label: "x", ...s })).statusCode).toBe(502);
   });
+  it("409 duplicate_option for a case/space-insensitive label match", async () => {
+    seed(); okFetch();
+    const s = await makeSubmission(adminAccount, { proposalId: PID, label: " a " });
+    expect((await addOption({ label: " a ", ...s })).json().error).toBe("duplicate_option");
+  });
 });
 
 describe("DELETE /api/proposals/:id/options/:optionId", () => {
@@ -167,10 +172,17 @@ describe("DELETE /api/proposals/:id/options/:optionId", () => {
     seed();
     expect((await del("1", {})).json().error).toBe("missing_admin_signature");
   });
-  it("403 not_an_admin", async () => {
+  it("403 not_authorized for a non-admin who isn't the option's creator", async () => {
     seed();
     const auth = await makeOptionDeleteAuth(strangerAccount, { proposalId: PID, optionId: 1 });
-    expect((await del("1", { optionDeleteAuth: auth })).json().error).toBe("not_an_admin");
+    expect((await del("1", { optionDeleteAuth: auth })).json().error).toBe("not_authorized");
+  });
+  it("lets the option's creator delete it (non-admin)", async () => {
+    seed({ options: [{ id: 1, label: "A", submittedBy: voterAccount.address }] });
+    const auth = await makeOptionDeleteAuth(voterAccount, { proposalId: PID, optionId: 1 });
+    const res = await del("1", { optionDeleteAuth: auth });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().deletedOptionId).toBe(1);
   });
   it("400 option_id_mismatch when the signed option differs", async () => {
     seed({ options: [{ id: 1, label: "A" }, { id: 2, label: "B" }] });

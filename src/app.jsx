@@ -2009,6 +2009,7 @@ function _LiveHolders({ token }) {
           const _existing = ISSUES.find((i) => i.id === opt.id);
           const _entry = {
             id: opt.id,
+            submittedBy: opt.submittedBy || null,
             title: opt.label,
             severity: "info",
             area: "Vote option",
@@ -2380,7 +2381,7 @@ function _LiveHolders({ token }) {
                       </div>
                     )}
                   </div>
-                  {role === "admin" && (
+                  {(role === "admin" || (address && iss.submittedBy && String(address).toLowerCase() === String(iss.submittedBy).toLowerCase())) && (
                     <div style={{ position: "absolute", top: 8, right: 8, zIndex: 2, display: "flex", gap: 4, alignItems: "center" }}>
                       {_deletingIssueId === iss.id ? (
                         <>
@@ -2746,13 +2747,28 @@ function _LiveHolders({ token }) {
         _body = body || "";
         _githubUrl = undefined;
       }
+      // Block a duplicate direction (case/space-insensitive) before we even
+      // ask the wallet to sign. The server enforces this too (409), this is
+      // just the instant, friendly feedback.
+      {
+        const _norm = (s) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+        const _round = (rounds || []).find((r) => r.id === roundId);
+        const _existing = ((_round && _round.issueIds) || [])
+          .map((id) => ISSUES.find((i) => i.id === id))
+          .filter(Boolean)
+          .map((i) => _norm(i.title));
+        if (_existing.includes(_norm(_title))) {
+          if (setSaveToast) setSaveToast({ kind: "err", text: `A direction called "${_title}" already exists.` });
+          return;
+        }
+      }
       _setSubmitting(true);
       try {
         if (setSaveToast) setSaveToast({ kind: "ok", text: "Sign the issue submission in your wallet…" });
         const { option } = await votingApi.addOption(roundId, _title, _body, _walletClient, address, _githubUrl);
         // UPSERT into the per-id global cache — overwrite a same-id entry
         // from another vote (and avoid duplicate id rows on re-submit).
-        const _newIssue = { id: option.id, title: option.label, severity: severity || "info", area: area || "", body: _body, githubUrl: option.github && option.github.url, githubNumber: option.github && option.github.number };
+        const _newIssue = { id: option.id, submittedBy: option.submittedBy || null, title: option.label, severity: severity || "info", area: area || "", body: _body, githubUrl: option.github && option.github.url, githubNumber: option.github && option.github.number };
         const _existingIssue = ISSUES.find((i) => i.id === option.id);
         if (_existingIssue) Object.assign(_existingIssue, _newIssue);
         else ISSUES.push(_newIssue);
@@ -2774,7 +2790,11 @@ function _LiveHolders({ token }) {
         // Drop the user into the vote page so they see their issue land.
         if (onSubmitted) onSubmitted(roundId);
       } catch (e) {
-        if (setSaveToast) setSaveToast({ kind: "err", text: "Submit failed: " + (e.message || String(e)) });
+        const _msg = (e && e.message) || String(e);
+        const _text = /duplicate_option/.test(_msg)
+          ? `A direction called "${_title}" already exists.`
+          : "Submit failed: " + _msg;
+        if (setSaveToast) setSaveToast({ kind: "err", text: _text });
       } finally {
         _setSubmitting(false);
       }
@@ -3805,6 +3825,7 @@ function _LiveHolders({ token }) {
               const _existing = ISSUES.find((i) => i.id === opt.id);
               const _entry = {
                 id: opt.id,
+                submittedBy: opt.submittedBy || null,
                 title: opt.label,
                 severity: "info",
                 area: "Vote option",

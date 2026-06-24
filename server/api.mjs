@@ -446,9 +446,6 @@ async function verifyOptionDelete(req, expectedProposalId, expectedOptionId) {
   } catch {
     return { ok: false, code: 400, error: "bad_actor_address" };
   }
-  if (!ADMIN_ADDRESSES.has(actor.toLowerCase())) {
-    return { ok: false, code: 403, error: "not_an_admin" };
-  }
   let valid;
   try {
     valid = await verifyTypedData({
@@ -717,6 +714,15 @@ app.post("/api/proposals/:id/options", async (req, reply) => {
   if (Date.now() > new Date(p.deadline).getTime()) {
     return reply.code(400).send({ error: "voting_closed" });
   }
+  // Reject duplicate directions (case- and whitespace-insensitive) against
+  // existing non-deleted options, so a second identical "Spain" can't be
+  // created. The client pre-checks too; this is the authoritative guard
+  // against races and direct API calls.
+  const _normLabel = (s) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
+  const _wantedLabel = _normLabel(label);
+  if ((p.options || []).some((o) => !o.deleted && _normLabel(o.label) === _wantedLabel)) {
+    return reply.code(409).send({ error: "duplicate_option" });
+  }
   // Submission consistency
   if (submission.proposalId !== req.params.id) {
     return reply.code(400).send({ error: "proposal_id_mismatch" });
@@ -870,6 +876,14 @@ app.delete("/api/proposals/:id/options/:optionId", async (req, reply) => {
   if (p.options[idx].deleted) return reply.code(409).send({ error: "already_deleted" });
   const verdict = await verifyOptionDelete(req, proposalId, optionId);
   if (!verdict.ok) return reply.code(verdict.code).send({ error: verdict.error, detail: verdict.detail });
+  // Authorize: an admin, or the wallet that originally submitted this option.
+  // The signature was already verified to recover to verdict.actor above, so
+  // a non-creator can't spoof someone else's address here.
+  const _actorLc = verdict.actor.toLowerCase();
+  const _creatorLc = String(p.options[idx].submittedBy || "").toLowerCase();
+  if (!ADMIN_ADDRESSES.has(_actorLc) && _actorLc !== _creatorLc) {
+    return reply.code(403).send({ error: "not_authorized" });
+  }
   p.options[idx] = {
     ...p.options[idx],
     deleted: true,
