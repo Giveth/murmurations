@@ -1,3 +1,9 @@
+// ⚠️ DEPRECATED — DO NOT RUN. The canonical source is src/app.jsx, edited
+// directly and built with `vite build`. This legacy generator regenerates
+// src/app.jsx from the STALE prototypes in source-jsx/, which strips features
+// the live app has gained since (it has broken the build before). Kept only
+// for history; ignore it when reviewing.
+//
 // Build src/app.jsx from the design-prototype JSX files.
 // Concatenates shared.jsx + flow2-budget.jsx + mobile-snapshot.jsx into
 // one ES module that exports F2App and MobileSnap.
