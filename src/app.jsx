@@ -2098,7 +2098,19 @@ function _LiveHolders({ token }) {
       return false;
     }, [_userBallot, allocations, (round?.issueIds || []).length]);
     const _revertToSaved = () => { if (_userBallot) _hydrateAllocs(_userBallot); };
-    const issues = round.issueIds.map(id => ISSUES.find(i => i.id === id)).filter(Boolean);
+    // Directions are sorted by score (the live tally) descending, so the
+    // leading option sits at the top instead of first-come insertion order.
+    // The sort key is _roundTally, which only changes on load / refresh /
+    // after a vote — NOT while the user drags a slider — so rows don't
+    // reorder mid-allocation. Equal scores keep their original order (stable
+    // tie-break on insertion index). Coin art keys off round.issueIds, not
+    // this display order, so it stays stable per option.
+    const issues = round.issueIds
+      .map((id, _i) => ({ _iss: ISSUES.find(i => i.id === id), _i }))
+      .filter((x) => x._iss)
+      .sort((a, b) =>
+        (Number(_roundTally[b._iss.id] || 0) - Number(_roundTally[a._iss.id] || 0)) || (a._i - b._i))
+      .map((x) => x._iss);
     // Which option IDs count against THIS round's budget. Built from the
     // round's option list AS RENDERED (issues), not the raw issueIds array.
     // A direction the user just created can briefly be missing from
