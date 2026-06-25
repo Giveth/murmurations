@@ -241,7 +241,7 @@ function Wordmark({ light = false, size = 32, compact = false }) {
         }}
       />
       {!compact && (
-        <div style={{
+        <div className="wm-text" style={{
           fontFamily: "'Inter Tight', 'Inter', sans-serif",
           fontSize,
           fontWeight: 700,
@@ -749,10 +749,13 @@ function _LiveHolders({ token }) {
   // off it so they can never reach prod. Added 2026-06-22 per a maintainer so he can
   // test the voter flow without holding each round's badge.
   const _DEV = import.meta.env.DEV;
-  // Staging only: the admin can vote/submit on every round. Prod keeps the
-  // strict "must hold the badge" gate from 2026-06-03.
-  const canVote   = (r, holdsBadge) => (_DEV && r === "admin") ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
-  const canSubmit = (r, holdsBadge) => (_DEV && r === "admin") ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
+  // Staging only: ANY connected wallet can vote/submit on every round, so the
+  // full voter flow + mobile/browser rendering can be tested with any address
+  // without holding each round's badge (per a maintainer, 2026-06-25). Prod
+  // keeps the strict "must hold the badge" gate (_DEV is false in the prod
+  // build, so these branches are dead-code-eliminated).
+  const canVote   = (r, holdsBadge) => _DEV ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
+  const canSubmit = (r, holdsBadge) => _DEV ? true : (holdsBadge !== undefined ? !!holdsBadge : (r === "badgeholder"));
   const canAdmin  = (r) => r === "admin";
   // Per-round vote eligibility for the two mainnet ETHSecurity badges. Global
   // canVote() only knows "holds ANY badge"; a public round needs the PUBLIC
@@ -761,6 +764,10 @@ function _LiveHolders({ token }) {
   // source of truth shared by F2RoundDetail and F2IssueDetail so the two
   // screens can't drift (that drift was the 2026-06-23 phantom-vote bug).
   const canVoteInRound = (round, { role, isBadgeholder, isPublicBadgeholder, isIncognito, tokens }) => {
+    // Staging only: any connected wallet is eligible for EVERY round, so the
+    // voting UI fully renders for mobile/browser testing without each badge.
+    // Dead code in the prod build (import.meta.env.DEV === false).
+    if (_DEV) return true;
     const _pub  = "0xf67c0ade41c607efebf198f9d6065ab1ec5ad4cd";
     const _priv = "0x3b49f45ec8796f64febb1ae0f5661791845ce35c";
     const _tok  = (tokens || []).find((t) => t.id === round?.tokenId);
@@ -845,7 +852,7 @@ function _LiveHolders({ token }) {
   }
 
   // ── Top chrome ───────────────────────────────────────────────────
-  function F2Chrome({ active, onNav, role, address, isIncognito, isPublicBadgeholder, isBadgeholder, onDisconnect, onConnectClick, connected, children }) {
+  function F2Chrome({ active, onNav, role, address, isIncognito, isPublicBadgeholder, isBadgeholder, onDisconnect, onConnectClick, connected, children, canBack, onBack }) {
     // Submit tab intentionally omitted — issues are added from inside the
     // vote ("+ Add issue") and that route already pre-targets the current
     // round, so a standalone Submit tab is redundant noise.
@@ -925,12 +932,12 @@ function _LiveHolders({ token }) {
       return out;
     })();
     return (
-      <div className="dark-app" style={{ width: "100%", height: "100%", background: "var(--surface-app)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
+      <div className="dark-app f2-scroll" style={{ width: "100%", height: "100%", background: "var(--surface-app)", display: "flex", flexDirection: "column", position: "relative", overflow: "hidden" }}>
         {/* Đ-flock layer — sits behind header + content. Header has its
             own opaque bg + zIndex 10 so it occludes any squares that
             land near the top. Content cards have opaque bg too. The
             squares only "show" in the empty padding of the left rail. */}
-        <div aria-hidden="true" style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
+        <div aria-hidden="true" className="f2-flock" style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "hidden", zIndex: 0 }}>
           {_appDaoSquares.map((sq, i) => (
             <div key={i} style={{
               position: "absolute",
@@ -971,10 +978,13 @@ function _LiveHolders({ token }) {
           position: "relative",
           zIndex: 10,
         }}>
-          <div onClick={() => onNav("rounds")} style={{ cursor: "pointer" }}>
+          {canBack && (
+            <button onClick={onBack} aria-label="Back" className="f2-only-sm" style={{ display: "none", background: "transparent", border: "none", color: "var(--text-primary)", cursor: "pointer", fontSize: 22, lineHeight: 1, padding: "4px 10px 4px 0", marginRight: 2 }}>←</button>
+          )}
+          <div onClick={() => onNav("rounds")} className="f2-logo" style={{ cursor: "pointer" }}>
             <Wordmark size={44} light />
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
+          <div className="f2-hide-sm" style={{ display: "flex", gap: 4 }}>
             {items.map(([k, l]) => (
               <button key={k} onClick={() => onNav(k)} className="font-display" style={{
                 background: active === k ? "var(--dao-blue-900)" : "transparent",
@@ -987,7 +997,7 @@ function _LiveHolders({ token }) {
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {connected && (isIncognito || isPublicBadgeholder) && (
-              <span className="font-display" title="Which ETHSecurity identity this wallet is connected as" style={{
+              <span className="font-display f2-hide-sm" title="Which ETHSecurity identity this wallet is connected as" style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
                 fontSize: 12, fontWeight: 700, padding: "5px 11px", borderRadius: 999,
                 background: "var(--surface-pop)", border: "1px solid var(--stroke-line-2)", color: "var(--text-primary)",
@@ -998,9 +1008,9 @@ function _LiveHolders({ token }) {
             )}
             {connected && (role === "badgeholder" || role === "admin")
               ? <BadgePfp address={address} role={role} isIncognito={isIncognito} />
-              : <RoleChip role={role} />}
+              : <span className="f2-hide-sm"><RoleChip role={role} /></span>}
             {connected ? (
-              <button className="btn btn-secondary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={onDisconnect}>Disconnect</button>
+              <button className="btn btn-secondary f2-hide-sm" style={{ fontSize: 12, padding: "6px 14px" }} onClick={onDisconnect}>Disconnect</button>
             ) : (
               <button className="btn btn-primary" style={{ fontSize: 12, padding: "6px 14px" }} onClick={onConnectClick}>Connect Wallet</button>
             )}
@@ -1352,10 +1362,10 @@ function _LiveHolders({ token }) {
       return out;
     })();
     return (
-      <div style={{ width: "100%", minHeight: "100%", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 400px), 1fr))", position: "relative" }}>
-        <div className="dao-blue-surface" style={{ position: "relative", overflow: "hidden", minHeight: "min(58vh, 420px)" }}>
+      <div className="f2-2col f2-auto-h" style={{ width: "100%", height: "100%", display: "grid", gridTemplateColumns: "1.1fr 1fr", position: "relative" }}>
+        <div className="dao-blue-surface" style={{ position: "relative", overflow: "hidden" }}>
           {/* Hand-placed red Đ squares — TheDAO brand wallpaper */}
-          {_daoSquares.map((sq, i) => (
+          <div className="f2-flock">{_daoSquares.map((sq, i) => (
             <div
               key={i}
               aria-hidden="true"
@@ -1390,21 +1400,21 @@ function _LiveHolders({ token }) {
                 maskPosition: "center",
               }} />
             </div>
-          ))}
-          <div style={{ position: "absolute", inset: 40, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "white", zIndex: 2 }}>
-            <Wordmark light size={68} />
+          ))}</div>
+          <div className="f2-hero-body" style={{ position: "absolute", inset: 40, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "white", zIndex: 2 }}>
+            <div className="f2-wordmark-sm"><Wordmark light size={68} /></div>
             <div>
               <div className="font-mono" style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dao-gold-300)", marginBottom: 14, padding: "10px 18px", textShadow: "0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.65)", position: "relative", zIndex: 2 }}>Murmuration ·{"  "}theDAO's DAO</div>
               <div className="font-display" style={{ fontSize: "clamp(36px, 7vw, 60px)", fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: "white" }}>
                 200 experts.<br/>Murmuring<br/><span style={{ color: "var(--dao-gold-300)" }}>To one direction</span>
               </div>
-              <div className="font-body" style={{ fontSize: 16, color: "white", marginTop: 24, maxWidth: "min(480px, 100%)", lineHeight: 1.6, padding: "10px 18px", textShadow: "0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.65)", position: "relative", zIndex: 2 }}>
+              <div className="font-body f2-hero-copy" style={{ fontSize: 16, color: "white", marginTop: 24, maxWidth: "min(480px, 100%)", lineHeight: 1.6, padding: "10px 18px", textShadow: "0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.65)", position: "relative", zIndex: 2 }}>
                 TheDAO's ETHSecurity Badge holders coordinate through Murmurations. Each murmuration is an opportunity for TheDAO's elite group of Ethereum security experts to signal the direction they want TheDAO to go. Anyone can watch the murmurations, but only Badge holders can propose directions and submit a murmur.
               </div>
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "clamp(28px, 7vw, 60px)", background: "var(--dao-blue-950)" }}>
+        <div className="f2-pad" style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 60, background: "var(--dao-blue-950)" }}>
           <div style={{ width: "100%", maxWidth: 460, color: "white" }}>
             <div className="font-display" style={{ fontSize: 36, fontWeight: 700 }}>Welcome Starling</div>
 
@@ -1459,7 +1469,7 @@ function _LiveHolders({ token }) {
 
         {/* ── ACTIVE (live now) ── */}
         {open.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 18 }}>
             {open.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} />)}
           </div>
         )}
@@ -1505,7 +1515,7 @@ function _LiveHolders({ token }) {
               <span className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>Upcoming</span>
               <span className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--dao-gold-300)", padding: "4px 11px", borderRadius: 999, background: "rgba(245,210,110,0.14)", border: "1px solid rgba(245,210,110,0.30)" }}>🕒 Scheduled</span>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 18 }}>
               {upcoming.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} upcoming />)}
             </div>
           </>
@@ -1515,7 +1525,7 @@ function _LiveHolders({ token }) {
         {closed.length > 0 && (
           <>
             <div className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)", marginTop: 56, marginBottom: 16 }}>Past votes</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))", gap: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 18 }}>
               {closed.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} muted />)}
             </div>
           </>
@@ -2193,7 +2203,7 @@ function _LiveHolders({ token }) {
     return (
       <div className="f2-2col f2-pad" style={{ display: "grid", gridTemplateColumns: "340px 1fr", gap: 32, padding: "32px 40px", maxWidth: 1400, margin: "0 auto" }}>
         {/* sidebar */}
-        <div style={{ position: "sticky", top: 88, alignSelf: "start" }}>
+        <div className="f2-unsticky" style={{ position: "sticky", top: 88, alignSelf: "start" }}>
           <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)" }}>Your murmur</div>
           <div className="font-display" style={{ fontSize: 24, fontWeight: 700, color: "var(--text-primary)", marginTop: 4, lineHeight: 1.2 }}>{round.title}</div>
           <VotingModeBadge voting={round.voting} />
@@ -2346,6 +2356,7 @@ function _LiveHolders({ token }) {
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
             <div>
+              <div className="f2-only-sm" style={{ display: "none", fontSize: 13, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 4 }}>{round.title}</div>
               <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Directions</div>
             </div>
           </div>
@@ -2627,7 +2638,7 @@ function _LiveHolders({ token }) {
             <div style={{ whiteSpace: "pre-wrap" }}>{issue.body || <i style={{ color: "var(--text-faint)" }}>(no description)</i>}</div>
           </div>
           <div>
-            <div style={{ background: "var(--dao-blue-900)", color: "white", padding: 24, borderRadius: 14, position: "sticky", top: 88 }}>
+            <div className="f2-unsticky" style={{ background: "var(--dao-blue-900)", color: "white", padding: 24, borderRadius: 14, position: "sticky", top: 88 }}>
               {(() => {
                 // Compute round-wide budget excluding this issue's contribution.
                 // Membership = this round's options PLUS the issue currently
@@ -3982,7 +3993,7 @@ function _LiveHolders({ token }) {
     const round = currentRound ? rounds.find(r => r.id === currentRound) : null;
 
     return (
-      <F2Chrome active={screen === "round" || screen === "issue" ? "rounds" : screen} onNav={nav} role={role} address={address} isIncognito={isIncognito} isPublicBadgeholder={isPublicBadgeholder} isBadgeholder={isBadgeholder} onDisconnect={onDisconnect} onConnectClick={onConnectClick} connected={!!address}>
+      <F2Chrome active={screen === "round" || screen === "issue" ? "rounds" : screen} onNav={nav} role={role} address={address} isIncognito={isIncognito} isPublicBadgeholder={isPublicBadgeholder} isBadgeholder={isBadgeholder} onDisconnect={onDisconnect} onConnectClick={onConnectClick} connected={!!address} canBack={screen !== "rounds"} onBack={() => { if (screen === "issue" || screen === "submit") setScreen("round"); else setScreen("rounds"); }}>
         <WcLinkInjector />
         {screen === "rounds" && (
           <F2RoundsList

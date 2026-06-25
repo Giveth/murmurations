@@ -266,7 +266,7 @@ export function WalletGate(): React.ReactElement {
   }, [onLanding, isConnected, navigate]);
 
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative" }}>
+    <div className="f2-scroll" style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative" }}>
       {onLanding ? (
         <F2Connect
           onConnect={() => navigate("/votes")}

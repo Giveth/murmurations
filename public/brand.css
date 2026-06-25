@@ -344,4 +344,35 @@
   .f2-pad { padding-left: 16px !important; padding-right: 16px !important; }
   .f2-dir-row { grid-template-columns: 1fr !important; row-gap: 14px !important; }
   .f2-slider { width: 100% !important; }
+  /* The Đ-flock wallpaper's content-avoidance zones are computed for the wide
+     desktop layout; on a phone the squares land on top of the text, so just
+     hide the decorative flock entirely on mobile. */
+  .f2-flock { display: none !important; }
+  /* Sidebars are position:sticky for the desktop two-column layout; once the
+     columns stack, a sticky sidebar overlaps the content scrolling past it. */
+  .f2-unsticky { position: static !important; }
+  /* The 68px hero wordmark overflows a phone; scale it down to fit. */
+  .f2-wordmark-sm { transform: scale(0.6); transform-origin: top left; }
+  /* Shrink + inset the hero paragraph on mobile so it doesn't run edge-to-edge. */
+  .f2-hero-copy { font-size: 13.5px !important; max-width: 88% !important; }
+  /* Welcome screen on mobile: let the page size to its content (no viewport-
+     height locking — mobile browser chrome makes vh unreliable, so the hero
+     was too tall and clipped the paragraph), and flow the hero content
+     normally instead of absolute-positioning it inside a fixed-height panel. */
+  .f2-auto-h { height: auto !important; }
+  .f2-hero-body { position: static !important; inset: auto !important; padding: 32px 24px !important; gap: 28px !important; }
+  /* The app shell is height:100vh + overflow:hidden (a full-screen splash on
+     desktop). On mobile the content is taller than the screen, so make the
+     shell a scroll container sized to the DYNAMIC viewport (100dvh respects
+     the browser chrome) instead of clipping. */
+  .f2-scroll { height: 100dvh !important; max-height: 100dvh !important; overflow-y: auto !important; overflow-x: hidden !important; -webkit-overflow-scrolling: touch; }
+  /* Hide on mobile only (e.g. the redundant "Murmurations" nav pill — the
+     logo already navigates there). */
+  .f2-hide-sm { display: none !important; }
+  /* Show on mobile only — elements that carry inline display:none for desktop
+     (e.g. the murmur title surfaced above the directions list). */
+  .f2-only-sm { display: block !important; }
+  /* On mobile show just the diamond logo, not the "Murmuration" wordmark text,
+     so the header fits (back/PFP/Connect Wallet have room). */
+  .f2-logo .wm-text { display: none !important; }
 }
