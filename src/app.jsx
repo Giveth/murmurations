@@ -2038,6 +2038,10 @@ function _LiveHolders({ token }) {
         _setRoundTally(live.tally || {});
         _setRoundVoters(live.voterCount || 0);
         _setDeletedOptionIds(liveProposal.deletedOptionIds || []);
+        // Keep the round's OWN option list fresh (per-round resolution
+        // source — see _issFor). Prop-object mutation + _bumpTick is the
+        // same idiom as the ISSUES backfill below.
+        if (liveProposal.options) round.options = liveProposal.options;
         // 3) Defensive ISSUES backfill — when /vote/<id> is a fresh
         // deep-link landing, F2App's bulk hydration may not have
         // populated ISSUES yet. Mutate the global in place so the next
@@ -2146,8 +2150,23 @@ function _LiveHolders({ token }) {
     // reorder mid-allocation. Equal scores keep their original order (stable
     // tie-break on insertion index). Coin art keys off round.issueIds, not
     // this display order, so it stays stable per option.
+    // Round-scoped option resolution. Option ids collide across rounds, so
+    // the global ISSUES cache can briefly hold ANOTHER round's option at the
+    // same id (bulk hydrate loads every round; the last one wins each id
+    // until this round's _refreshState re-upserts). Resolving from
+    // round.options first makes the FIRST paint correct — no flash of a
+    // different vote's options on refresh (the Hal Finney bug, 2026-07-09).
+    const _issFor = (id) => {
+      const raw = (round.options || []).find((o) => o.id === id);
+      if (raw) return {
+        id: raw.id, submittedBy: raw.submittedBy || null, title: raw.label,
+        severity: "info", area: "Vote option", body: raw.body || "",
+        githubUrl: raw.github && raw.github.url, githubNumber: raw.github && raw.github.number,
+      };
+      return ISSUES.find((i) => i.id === id);
+    };
     const issues = round.issueIds
-      .map((id, _i) => ({ _iss: ISSUES.find(i => i.id === id), _i }))
+      .map((id, _i) => ({ _iss: _issFor(id), _i }))
       .filter((x) => x._iss)
       .sort((a, b) =>
         (Number(_roundTally[b._iss.id] || 0) - Number(_roundTally[a._iss.id] || 0)) || (a._i - b._i))
@@ -2245,7 +2264,7 @@ function _LiveHolders({ token }) {
           </div>
           <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2, maxHeight: 220, overflowY: "auto" }}>
             {Object.entries(allocations).filter(([k, v]) => v > 0 && round.issueIds.includes(Number(k))).map(([id, v]) => {
-              const iss = ISSUES.find(x => x.id === Number(id));
+              const iss = _issFor(Number(id));
               if (!iss) return null;
               const _rowCost = round.voting === "quadratic" ? v * v : v;
               const _unit = round.voting === "quadratic" ? (v === 1 ? "pt" : "pts") : (v === 1 ? "vote" : "votes");
@@ -2843,7 +2862,7 @@ function _LiveHolders({ token }) {
         else ISSUES.push(_newIssue);
         if (setRounds) {
           setRounds((prev) => prev.map((r) => r.id === roundId
-            ? { ...r, issueIds: [...(r.issueIds || []), option.id] }
+            ? { ...r, issueIds: [...(r.issueIds || []), option.id], options: [...(r.options || []), option] }
             : r
           ));
         }
@@ -3937,6 +3956,13 @@ function _LiveHolders({ token }) {
               // ISSUES holds whichever round loaded last, which mislabels
               // other rounds' ballots (Griff, 2026-06-24).
               optionLabels: Object.fromEntries((p.options || []).map((o) => [o.id, o.label])),
+              // Raw option objects, kept ON the round. Round views resolve
+              // options from here first (per-round, collision-proof) and only
+              // fall back to the global ISSUES cache — option ids collide
+              // across rounds, and between the bulk hydrate and the round-
+              // scoped refetch ISSUES briefly holds ANOTHER round's option at
+              // the same id (the "Hal Finney flash" on refresh, 2026-07-09).
+              options: (p.options || []),
               tokenId: p.tokenId || _defaultTokId,
               // Carry the proposal's stored eligibility token address so
               // per-round public/private detection works in ANY browser —
