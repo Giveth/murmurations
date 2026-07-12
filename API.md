@@ -91,6 +91,22 @@ Body: the round fields + `{ adminAuth }` (a signed `AdminAction`,
 Body: `{ adminAuth }` (`action: "delete_proposal"`). Admin allowlist only.
 Removes the round and its ballots.
 
+### `POST /api/proposals/draft` — propose a community draft (badge holders)
+Body: `{ draft, signature, proposal }` where `draft` is a signed
+`ProposalDraft` and `proposal` carries `{ id, title, description, options[],
+durationDays }`. Any badge holder can propose (one live draft each; admins
+exempt). Title ≥ 8 chars, ≤ 12 options, duration clamped 1–30 days. The
+round is stored with `status: "draft"` — listed publicly but not votable.
+
+### `POST /api/proposals/:id/support` — support a draft (badge holders)
+Body: `{ support, signature }` where `support` is a signed `DraftSupport`.
+One support per wallet; creators can't support their own draft. At the
+support threshold (`supportThreshold` in every draft response) the draft
+auto-promotes to an official vote: `status: "open"`, `opensAt` = the next
+weekly cycle start (Monday 12:00 UTC, at least 12h out), `deadline` =
+`opensAt + durationDays`. The promoting response carries
+`{ promoted: true, opensAt, deadline }`.
+
 ---
 
 ## EIP-712 signing
@@ -110,6 +126,8 @@ Types ([`src/votingApi.ts`](src/votingApi.ts) client side, mirrored in
 | `IssueSubmission` | submit a direction | `submitter`, `proposalId`, `label`, `body`, `nonce`, `deadline` |
 | `OptionDelete` | delete a direction | `action`, `proposalId`, `optionId`, `actor`, `nonce`, `deadline` |
 | `AdminAction` | create/delete a round | `action`, `proposalId`, `actor`, `nonce`, `deadline` |
+| `ProposalDraft` | propose a community draft | `creator`, `proposalId`, `title`, `nonce`, `deadline` |
+| `DraftSupport` | support a draft | `supporter`, `proposalId`, `nonce`, `deadline` |
 
 Replay/abuse protection: every payload carries a `nonce` (timestamp) and a
 `deadline` (~5 min); `OptionDelete` binds the `optionId`; the server
@@ -126,6 +144,8 @@ re-derives eligibility and budget rather than trusting client claims.
 | Submit a direction | `IssueSubmission` | any wallet holding the round's badge (admins bypass) |
 | Delete a direction | `OptionDelete` | the direction's creator, or an admin |
 | Create / delete a round | `AdminAction` | admin allowlist only |
+| Propose a community draft | `ProposalDraft` | any badge holder (one live draft each) |
+| Support a draft | `DraftSupport` | any badge holder except the draft's creator |
 
 ## Quick examples
 ```bash

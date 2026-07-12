@@ -564,8 +564,10 @@ app.get("/api", async () => ({
     "budget", "options[] ({id,title,body})", "deadline (ISO, close time)",
     "opensAt (ISO start time; null = live immediately)", "rolling",
     "tokenAddress", "tokenChainId", "createdAt", "createdBy",
+    "status (draft = community proposal collecting supporters, not votable)",
+    "supporters[] + supportThreshold (drafts only)",
   ],
-  notes: "Read-only and public, no API key required. Casting a vote requires a signed EIP-712 ballot (POST, wallet). A vote is live when now is between opensAt and deadline.",
+  notes: "Read-only and public, no API key required. Casting a vote requires a signed EIP-712 ballot (POST, wallet). A vote is live when now is between opensAt and deadline. Badge holders can also propose community drafts (POST /api/proposals/draft) and support them (POST /api/proposals/:id/support); at the threshold a draft auto-promotes to a vote scheduled for the next weekly cycle. See API.md.",
 }));
 
 // Fetch a public GitHub issue's title/body so the Import-from-GitHub
