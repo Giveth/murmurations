@@ -1464,12 +1464,13 @@ function _LiveHolders({ token }) {
   }
 
   // ── Rounds list (landing) ────────────────────────────────────────
-  function F2RoundsList({ rounds, role, isBadgeholder, onOpen, onCreate }) {
-    // Three groups: active (live now), upcoming (scheduled, opens in the
-    // future), past (closed). Added 2026-06-22 per a maintainer — scheduled votes.
-    const upcoming = rounds.filter(r => _isUpcomingRound(r));
-    const closed = rounds.filter(r => !_isUpcomingRound(r) && _isPastRound(r));
-    const open = rounds.filter(r => !_isUpcomingRound(r) && !_isPastRound(r) && r.status === "open");
+  function F2RoundsList({ rounds, role, isBadgeholder, onOpen, onCreate, onPropose }) {
+    // Four groups: active (live now), community drafts (collecting
+    // supporters), upcoming (scheduled), past (closed).
+    const drafts = rounds.filter(r => _isDraftRound(r));
+    const upcoming = rounds.filter(r => !_isDraftRound(r) && _isUpcomingRound(r));
+    const closed = rounds.filter(r => !_isDraftRound(r) && !_isUpcomingRound(r) && _isPastRound(r));
+    const open = rounds.filter(r => !_isDraftRound(r) && !_isUpcomingRound(r) && !_isPastRound(r) && r.status === "open");
     return (
       <div className="f2-pad" style={{ padding: "40px 40px 80px", maxWidth: 1280, margin: "0 auto" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 28 }}>
@@ -1480,9 +1481,17 @@ function _LiveHolders({ token }) {
               {open.length} murmuration{open.length === 1 ? "" : "s"} open. {role === "visitor" ? "Connect an ETHSecurity Badge wallet to participate." : null}
             </div>
           </div>
-          {canAdmin(role) && (
-            <button className="btn btn-primary btn-lg f2-hide-sm" onClick={onCreate}>+ New vote</button>
-          )}
+          <div style={{ display: "flex", gap: 10 }}>
+            {isBadgeholder && !canAdmin(role) && (
+              <button className="btn btn-secondary f2-hide-sm" style={{ padding: "12px 22px" }} onClick={onPropose}>✍ Propose a murmuration</button>
+            )}
+            {canAdmin(role) && (
+              <button className="btn btn-secondary f2-hide-sm" style={{ padding: "12px 22px" }} onClick={onPropose}>✍ Propose (community)</button>
+            )}
+            {canAdmin(role) && (
+              <button className="btn btn-primary btn-lg f2-hide-sm" onClick={onCreate}>+ New vote</button>
+            )}
+          </div>
         </div>
 
         {/* ── ACTIVE (live now) ── */}
@@ -1526,6 +1535,22 @@ function _LiveHolders({ token }) {
           </div>
         )}
 
+        {/* ── COMMUNITY PROPOSALS (drafts collecting supporters) ── */}
+        {drafts.length > 0 && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 56, marginBottom: 6 }}>
+              <span className="font-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--text-primary)" }}>Community proposals</span>
+              <span className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--dao-blue-300, #8db8dc)", padding: "4px 11px", borderRadius: 999, background: "rgba(80,140,190,0.16)", border: "1px solid rgba(80,140,190,0.32)" }}>✍ Drafts</span>
+            </div>
+            <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginBottom: 16 }}>
+              Proposed by badge holders. A draft becomes an official scheduled vote once enough badge holders support it.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 360px), 1fr))", gap: 18 }}>
+              {drafts.map(r => <RoundCard key={r.id} r={r} onOpen={() => onOpen(r.id)} draft />)}
+            </div>
+          </>
+        )}
+
         {/* ── UPCOMING (scheduled) ── */}
         {upcoming.length > 0 && (
           <>
@@ -1552,7 +1577,7 @@ function _LiveHolders({ token }) {
     );
   }
 
-  function RoundCard({ r, onOpen, muted, upcoming }) {
+  function RoundCard({ r, onOpen, muted, upcoming, draft }) {
     const accentMap = {
       red:  "var(--dao-red)",
       gold: "rgb(218,165,32)",
@@ -1564,7 +1589,7 @@ function _LiveHolders({ token }) {
     const _ra = String(r.tokenAddress || "").toLowerCase();
     const _isPublicRound = _ra === "0xf67c0ade41c607efebf198f9d6065ab1ec5ad4cd";
     const _isPrivateRound = _ra === "0x3b49f45ec8796f64febb1ae0f5661791845ce35c";
-    const _past = !upcoming && _isPastRound(r);
+    const _past = !upcoming && !draft && _isPastRound(r);
     return (
       <div onClick={onOpen} style={{
         // Muted (past) votes use the deeper recessed surface instead of
@@ -1589,12 +1614,12 @@ function _LiveHolders({ token }) {
               padding: "4px 9px", borderRadius: 4,
               background: upcoming ? "rgba(245,210,110,0.14)" : (_past ? "rgba(255,255,255,0.08)" : "rgba(92,183,90,0.16)"),
               color: upcoming ? "var(--dao-gold-300)" : (_past ? "var(--text-muted)" : "var(--dao-green)"),
-            }}>{upcoming ? "🕒 Upcoming" : (_past ? "● closed" : "● open")}</span>
+            }}>{draft ? "✍ Draft" : (upcoming ? "🕒 Upcoming" : (_past ? "● closed" : "● open"))}</span>
             {_isPublicRound && <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 4, background: "rgba(225,175,55,0.18)", color: "rgb(245,210,110)" }}>🐦 Public Badge</span>}
             {_isPrivateRound && <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 4, background: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.85)" }}>🕵️ Incognito Badge</span>}
             {r.rolling && <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "4px 9px", borderRadius: 4, background: "rgba(108,162,204,0.18)", color: "rgb(180,220,255)" }}>Always open</span>}
           </div>
-          <span className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", letterSpacing: "0.04em" }}>{r.voters} voted</span>
+          <span className="font-mono" style={{ fontSize: 12, color: "var(--text-muted)", letterSpacing: "0.04em" }}>{draft ? `${(r.supporters || []).length} of ${r.supportThreshold || "?"} supporters` : `${r.voters} voted`}</span>
         </div>
         <div className="font-display" style={{ fontSize: 26, fontWeight: 700, color: "var(--text-primary)", marginTop: 18, lineHeight: 1.22, letterSpacing: "-0.01em" }}>{r.title}</div>
         <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.55 }}>{r.blurb}</div>
@@ -1602,9 +1627,11 @@ function _LiveHolders({ token }) {
           <Stat label="Voting" value={r.voting === "quadratic" ? "Quadratic" : "Token-weight"} />
           <Stat label="Budget" value={`${r.budget} ${r.voting === "quadratic" ? "pts" : "votes"}`} />
           <Stat label="Directions" value={r.issueIds.length} />
-          {upcoming
-            ? <Stat label="Opens" value={_prettyLocalClose(r.opens) || "—"} />
-            : <Stat label={r.rolling ? "Status" : (_past ? "Closed" : "Closes")} value={r.rolling ? "Always open" : (_prettyLocalClose(r.closes) || "—")} />}
+          {draft
+            ? <Stat label="Runs for" value={`${r.durationDays || 7} days`} />
+            : upcoming
+              ? <Stat label="Opens" value={_prettyLocalClose(r.opens) || "—"} />
+              : <Stat label={r.rolling ? "Status" : (_past ? "Closed" : "Closes")} value={r.rolling ? "Always open" : (_prettyLocalClose(r.closes) || "—")} />}
         </div>
       </div>
     );
@@ -2786,6 +2813,182 @@ function _LiveHolders({ token }) {
   // ── Submit issue ─────────────────────────────────────────────────
   // Two modes: "compose" — write directly here.
   //            "import"  — paste a public GitHub issue URL (auto-fetched).
+  // ── Community draft detail: supporter progress + Support CTA ──────
+  // (permissionless proposals, Netto issue 3 — drafts promote to a
+  // scheduled official vote at the support threshold)
+  function F2DraftDetail({ round, role, isBadgeholder, address, onConnectClick, onBack, setRounds }) {
+    const { data: _walletClient } = wagmi.useWalletClient();
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState(null);
+    const [done, setDone] = useState(null); // {promoted, opensAt, supporterCount}
+    const supporters = round.supporters || [];
+    const threshold = round.supportThreshold || 3;
+    const count = done?.supporterCount ?? supporters.length;
+    const mine = address && supporters.some(s => s.address === address.toLowerCase());
+    const isCreator = address && (round.createdBy || "").toLowerCase() === address.toLowerCase();
+    const promoted = done?.promoted;
+    async function support() {
+      if (!_walletClient || !address) { onConnectClick?.(); return; }
+      setBusy(true); setErr(null);
+      try {
+        const res = await votingApi.supportDraft(round.id, _walletClient, address);
+        setDone(res);
+        setRounds(prev => prev.map(r => r.id !== round.id ? r : {
+          ...r,
+          supporters: [...(r.supporters || []), { address: address.toLowerCase() }],
+          ...(res.promoted ? { status: "open", opens: res.opensAt, closes: res.deadline } : {}),
+        }));
+      } catch (e) {
+        const m = String(e.message || e);
+        setErr(m.includes("not_a_badgeholder") ? "Only ETHSecurity Badge holders can support a draft."
+          : m.includes("already_supported") ? "You already supported this draft."
+          : m.includes("creator_cannot_support") ? "You proposed this one, it needs support from others."
+          : "Could not sign your support. " + m);
+      } finally { setBusy(false); }
+    }
+    return (
+      <div className="f2-pad" style={{ padding: "40px 40px 80px", maxWidth: 760, margin: "0 auto" }}>
+        <BackButton onBack={onBack} />
+        <div style={{ textAlign: "center", marginTop: 18 }}>
+          <span className="font-mono" style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "rgb(141,184,220)", padding: "5px 12px", borderRadius: 999, background: "rgba(80,140,190,0.16)", border: "1px solid rgba(80,140,190,0.32)" }}>✍ Community draft</span>
+          <div className="font-display" style={{ fontSize: 38, fontWeight: 700, color: "var(--text-primary)", marginTop: 16, lineHeight: 1.15 }}>{round.title}</div>
+          {round.blurb ? <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)", marginTop: 10, lineHeight: 1.6 }}>{round.blurb}</div> : null}
+        </div>
+
+        {(round.issueIds || []).length > 0 && (
+          <div style={{ marginTop: 28, background: "var(--surface-card)", borderRadius: 14, border: "1px solid var(--stroke-line-2)", padding: "18px 22px" }}>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 10 }}>Proposed directions</div>
+            {(round.issueIds || []).map(id => (
+              <div key={id} className="font-body" style={{ fontSize: 14.5, color: "var(--text-primary)", padding: "7px 0", borderBottom: "1px solid var(--stroke-line-2)" }}>
+                {(round.optionLabels || {})[id] || `Option ${id}`}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div style={{ marginTop: 24, background: "var(--surface-card)", borderRadius: 14, border: "1px solid var(--stroke-line-2)", padding: "22px 24px", textAlign: "center" }}>
+          {promoted ? (
+            <>
+              <div className="font-display" style={{ fontSize: 22, fontWeight: 700, color: "var(--dao-green)" }}>🎉 Promoted to an official vote</div>
+              <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8 }}>
+                It reached {count} supporters and is scheduled to open {done.opensAt ? new Date(done.opensAt).toLocaleString() : "next cycle"}.
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="font-display" style={{ fontSize: 20, fontWeight: 700, color: "var(--text-primary)" }}>{count} of {threshold} supporters</div>
+              <div style={{ height: 10, borderRadius: 999, background: "var(--surface-elevated)", marginTop: 12, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, (count / threshold) * 100)}%`, background: "var(--dao-red)", borderRadius: 999, transition: "width .3s" }} />
+              </div>
+              <div className="font-body" style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 12 }}>
+                When {threshold} badge holders support it, this draft becomes an official vote scheduled for the next voting cycle.
+              </div>
+              {mine ? (
+                <div className="font-body" style={{ fontSize: 14, color: "var(--dao-green)", marginTop: 16 }}>✓ You support this proposal</div>
+              ) : isCreator ? (
+                <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 16 }}>You proposed this. It needs {threshold} supporters besides you.</div>
+              ) : (
+                <button className="btn btn-primary btn-lg" style={{ marginTop: 16 }} disabled={busy} onClick={support}>
+                  {busy ? "Signing…" : (address ? "✍ Support this proposal" : "Connect to support")}
+                </button>
+              )}
+              {err && <div className="font-body" style={{ fontSize: 13, color: "var(--dao-red)", marginTop: 12 }}>{err}</div>}
+            </>
+          )}
+        </div>
+        <div className="font-body" style={{ fontSize: 12, color: "var(--text-faint)", marginTop: 14, textAlign: "center" }}>
+          Proposed by {round.createdBy ? `${round.createdBy.slice(0, 6)}…${round.createdBy.slice(-4)}` : "a badge holder"} · supporting signs a gas-free message with your wallet
+        </div>
+      </div>
+    );
+  }
+
+  // ── Propose a community murmuration (any badge holder) ────────────
+  function F2ProposeDraft({ role, isBadgeholder, address, onConnectClick, onBack, setRounds, onCreated }) {
+    const { data: _walletClient } = wagmi.useWalletClient();
+    const [title, setTitle] = useState("");
+    const [blurb, setBlurb] = useState("");
+    const [opts, setOpts] = useState(["", ""]);
+    const [days, setDays] = useState(7);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState(null);
+    const [created, setCreated] = useState(null);
+    const canGo = title.trim().length >= 8 && opts.filter(o => o.trim()).length >= 2;
+    async function submit() {
+      if (!_walletClient || !address) { onConnectClick?.(); return; }
+      setBusy(true); setErr(null);
+      try {
+        const id = "r-" + Date.now().toString(36);
+        const res = await votingApi.createDraft({
+          id, title: title.trim(), description: blurb.trim(),
+          options: opts.filter(o => o.trim()).map(label => ({ label: label.trim() })),
+          durationDays: days,
+        }, _walletClient, address);
+        setCreated(res);
+        const p = res.proposal;
+        setRounds(prev => [...prev, {
+          id: p.id, title: p.title, blurb: p.description || "", voting: p.votingMode || "quadratic",
+          budget: p.budget || 100, cap: 0, opens: p.createdAt, closes: p.deadline, rolling: false,
+          status: "draft", supporters: [], supportThreshold: res.supportThreshold,
+          createdBy: address, durationDays: days, voters: 0,
+          issueIds: (p.options || []).map(o => o.id),
+          optionLabels: Object.fromEntries((p.options || []).map(o => [o.id, o.label])),
+          options: p.options || [], accent: "blue", tokenId: p.tokenId || null,
+        }]);
+        onCreated?.(p.id);
+      } catch (e) {
+        const m = String(e.message || e);
+        setErr(m.includes("not_a_badgeholder") ? "Only ETHSecurity Badge holders can propose."
+          : m.includes("draft_limit") ? "You already have a live draft. It must promote (or be withdrawn by an admin) before you propose another."
+          : "Could not create the draft. " + m);
+      } finally { setBusy(false); }
+    }
+    const _inp = { width: "100%", background: "var(--surface-elevated)", border: "1px solid var(--stroke-line-2)", borderRadius: 10, padding: "12px 14px", color: "var(--text-primary)", fontSize: 15 };
+    return (
+      <div className="f2-pad" style={{ padding: "40px 40px 80px", maxWidth: 680, margin: "0 auto" }}>
+        <BackButton onBack={onBack} />
+        <div className="font-display" style={{ fontSize: 34, fontWeight: 700, color: "var(--text-primary)", marginTop: 18 }}>Propose a murmuration</div>
+        <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
+          Any badge holder can propose. Your draft goes live for the community, and once enough badge holders support it, it becomes an official vote scheduled for the next voting cycle. One live draft per person.
+        </div>
+        <div style={{ marginTop: 26, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Title</div>
+            <input style={_inp} value={title} maxLength={120} placeholder="What should the flock decide?" onChange={e => setTitle(e.target.value)} />
+          </div>
+          <div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Context (optional)</div>
+            <textarea style={{ ..._inp, minHeight: 90, resize: "vertical" }} value={blurb} maxLength={600} placeholder="Why this vote matters, links, background…" onChange={e => setBlurb(e.target.value)} />
+          </div>
+          <div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Directions (at least 2 · voters can add more once live)</div>
+            {opts.map((o, i) => (
+              <input key={i} style={{ ..._inp, marginBottom: 8 }} value={o} maxLength={120} placeholder={`Direction ${i + 1}`} onChange={e => setOpts(opts.map((x, j) => j === i ? e.target.value : x))} />
+            ))}
+            {opts.length < 8 && (
+              <button className="btn btn-secondary" style={{ padding: "8px 16px", fontSize: 13 }} onClick={() => setOpts([...opts, ""])}>+ Another direction</button>
+            )}
+          </div>
+          <div>
+            <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Voting window once live</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[3, 7, 14].map(d => (
+                <button key={d} className="btn btn-secondary" style={{ padding: "9px 18px", fontSize: 13, ...(days === d ? { background: "var(--dao-red)", borderColor: "var(--dao-red)", color: "#fff" } : {}) }} onClick={() => setDays(d)}>{d} days</button>
+              ))}
+            </div>
+          </div>
+          {err && <div className="font-body" style={{ fontSize: 13, color: "var(--dao-red)" }}>{err}</div>}
+          <button className="btn btn-primary btn-lg" disabled={!canGo || busy} style={{ opacity: canGo ? 1 : 0.5 }} onClick={submit}>
+            {busy ? "Signing…" : (address ? "✍ Sign + publish draft" : "Connect to propose")}
+          </button>
+          <div className="font-body" style={{ fontSize: 12, color: "var(--text-faint)" }}>
+            Publishing signs a gas-free message proving you hold the badge. No funds move.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function F2Submit({ rounds, setRounds, role, isBadgeholder, tokens, address, setSaveToast, onSubmitted, preselectRoundId, onBack }) {
     const { data: _walletClient } = wagmi.useWalletClient();
     const [_submitting, _setSubmitting] = useState(false);
@@ -3661,6 +3864,10 @@ function _LiveHolders({ token }) {
   }
   // A round is "upcoming" if it is published ("open") but its opens time is
   // still in the future (scheduled, not yet live). Added 2026-06-22 per a maintainer.
+  // Community draft (permissionless proposal): collecting supporters,
+  // not votable yet. Must be checked BEFORE _isPastRound — a draft's
+  // status !== "open" would otherwise classify it as past.
+  function _isDraftRound(r) { return !!r && r.status === "draft"; }
   function _isUpcomingRound(r) {
     if (!r || r.status !== "open") return false;
     const o = _utcMs(r.opens);
@@ -3947,7 +4154,13 @@ function _LiveHolders({ token }) {
               opens: p.opensAt || p.createdAt || new Date().toISOString(),
               closes: p.deadline,
               rolling: false,
-              status: closesMs > Date.now() ? "open" : "closed",
+              // Community drafts keep their server status; everything else
+              // derives open/closed from the deadline as before.
+              status: p.status === "draft" ? "draft" : (closesMs > Date.now() ? "open" : "closed"),
+              supporters: p.supporters || [],
+              supportThreshold: p.supportThreshold || 0,
+              createdBy: p.createdBy || null,
+              durationDays: p.durationDays || 7,
               voters: 0,
               issueIds: (p.options || []).map((o) => o.id),
               // Per-round id→label map. Views that render a STORED ballot
@@ -4052,9 +4265,32 @@ function _LiveHolders({ token }) {
               }
             }}
             onCreate={() => { setEditingRound("new"); setScreen("editor"); }}
+            onPropose={() => setScreen("propose")}
           />
         )}
-        {screen === "round" && round && (
+        {screen === "propose" && (
+          <F2ProposeDraft
+            role={role}
+            isBadgeholder={isBadgeholder}
+            address={address}
+            onConnectClick={onConnectClick}
+            onBack={() => setScreen("rounds")}
+            setRounds={setRounds}
+            onCreated={(id) => { setCurrentRound(id); setScreen("round"); if (typeof window !== "undefined") window.history.pushState({}, "", "/vote/" + id); }}
+          />
+        )}
+        {screen === "round" && round && _isDraftRound(round) && (
+          <F2DraftDetail
+            round={round}
+            role={role}
+            isBadgeholder={isBadgeholder}
+            address={address}
+            onConnectClick={onConnectClick}
+            onBack={() => setScreen("rounds")}
+            setRounds={setRounds}
+          />
+        )}
+        {screen === "round" && round && !_isDraftRound(round) && (
           <F2RoundDetail
             round={round}
             allocations={allocations}

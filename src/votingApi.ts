@@ -358,3 +358,102 @@ export async function castVote(
   }
   return body;
 }
+
+// ── Permissionless proposals (Nouns-style drafts, Netto issue 3) ────
+const PROPOSAL_DRAFT_TYPES = {
+  ProposalDraft: [
+    { name: "creator", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "title", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+const DRAFT_SUPPORT_TYPES = {
+  DraftSupport: [
+    { name: "supporter", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+/** Create a community draft murmuration. Any badge holder; one live draft
+ *  per creator. Promotes automatically once enough supporters sign. */
+export async function createDraft(
+  input: {
+    id: string;
+    title: string;
+    description?: string;
+    options?: { label: string; body?: string }[];
+    durationDays?: number;
+    votingMode?: "quadratic" | "token";
+    budget?: number;
+  },
+  walletClient: WalletClient,
+  creator: `0x${string}`,
+): Promise<{ proposal: Proposal; supportThreshold: number }> {
+  const nonce = Date.now();
+  const deadline = Math.floor(Date.now() / 1000) + 5 * 60;
+  const signature = await walletClient.signTypedData({
+    account: creator,
+    domain: DOMAIN,
+    types: PROPOSAL_DRAFT_TYPES,
+    primaryType: "ProposalDraft",
+    message: {
+      creator,
+      proposalId: input.id,
+      title: input.title,
+      nonce: BigInt(nonce),
+      deadline: BigInt(deadline),
+    },
+  });
+  const res = await fetch("/api/proposals/draft", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      draft: { creator, proposalId: input.id, title: input.title, nonce, deadline },
+      signature,
+      proposal: input,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`createDraft: ${res.status} ${err.error || ""}`);
+  }
+  return res.json();
+}
+
+/** Sign support for a community draft. At the threshold the server
+ *  promotes it to a scheduled official vote and says so in the reply. */
+export async function supportDraft(
+  proposalId: string,
+  walletClient: WalletClient,
+  supporter: `0x${string}`,
+): Promise<{ supporterCount: number; supportThreshold: number; promoted: boolean; opensAt?: string }> {
+  const nonce = Date.now();
+  const deadline = Math.floor(Date.now() / 1000) + 5 * 60;
+  const signature = await walletClient.signTypedData({
+    account: supporter,
+    domain: DOMAIN,
+    types: DRAFT_SUPPORT_TYPES,
+    primaryType: "DraftSupport",
+    message: {
+      supporter,
+      proposalId,
+      nonce: BigInt(nonce),
+      deadline: BigInt(deadline),
+    },
+  });
+  const res = await fetch(`/api/proposals/${encodeURIComponent(proposalId)}/support`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ support: { supporter, proposalId, nonce, deadline }, signature }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`supportDraft: ${res.status} ${err.error || ""}`);
+  }
+  return res.json();
+}

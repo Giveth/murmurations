@@ -374,6 +374,42 @@ const ISSUE_SUBMISSION_TYPES = {
   ],
 };
 
+// ── Permissionless proposals (Nouns-style, Netto issue 3) ──────────
+// Any badge holder drafts a murmuration; other badge holders sign
+// their support; at DRAFT_SUPPORT_THRESHOLD supporters it auto-promotes
+// to a scheduled official vote (opens at the next voting cycle, so
+// community proposals batch for engagement — Netto issue 7's cadence).
+const PROPOSAL_DRAFT_TYPES = {
+  ProposalDraft: [
+    { name: "creator", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "title", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+const DRAFT_SUPPORT_TYPES = {
+  DraftSupport: [
+    { name: "supporter", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+const DRAFT_SUPPORT_THRESHOLD = Math.max(1, Number(process.env.DRAFT_SUPPORT_THRESHOLD || 3));
+// Next cycle start: the coming Monday 12:00 UTC (at least 12h out, so a
+// draft promoted just before the cycle still gets an announcement gap).
+function nextCycleStartIso(now = Date.now()) {
+  const d = new Date(now);
+  const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 0, 0));
+  const day = target.getUTCDay(); // 0 Sun … 6 Sat
+  let add = (8 - day) % 7;        // days until next Monday
+  if (add === 0) add = 7;
+  target.setUTCDate(target.getUTCDate() + add);
+  if (target.getTime() - now < 12 * 3600 * 1000) target.setUTCDate(target.getUTCDate() + 7);
+  return target.toISOString();
+}
+
 async function verifyAdminAction(req, expectedAction, expectedProposalId) {
   const adminAuth = req.body?.adminAuth;
   if (!adminAuth || !adminAuth.action || !adminAuth.signature) {
@@ -923,6 +959,180 @@ app.get("/api/proposals/:id/ballots", async (req) => {
   return { ballots: Object.values(all[req.params.id] || {}) };
 });
 
+// ── Permissionless proposals: shared badge gate ─────────────────────
+// Same check the options endpoint does inline: admins bypass, everyone
+// else must hold the eligibility badge for the given token spec.
+async function holdsBadgeOrAdmin(addr, tokenSpec) {
+  if (ADMIN_ADDRESSES.has(addr.toLowerCase())) return { ok: true, admin: true, balance: 0n };
+  if (!tokenSpec) return { ok: false, code: 403, error: "no_known_eligibility_token" };
+  let bal;
+  try {
+    bal = await getChainClient(tokenSpec.chain).readContract({
+      address: tokenSpec.address,
+      abi: ERC721_BALANCE_OF_ABI,
+      functionName: "balanceOf",
+      args: [addr],
+    });
+  } catch (e) {
+    return { ok: false, code: 503, error: "rpc_failed", detail: e.message };
+  }
+  if (bal === 0n) return { ok: false, code: 403, error: "not_a_badgeholder" };
+  return { ok: true, admin: false, balance: bal };
+}
+
+// Create a community DRAFT murmuration. Body: { draft, signature, proposal }.
+// draft = the EIP-712 ProposalDraft message; proposal = {id, title,
+// description, options?, durationDays?, votingMode?, budget?}. Any badge
+// holder may draft; one LIVE draft per creator at a time (anti-spam).
+// Drafts don't vote — they collect supporters and auto-promote.
+app.post("/api/proposals/draft", async (req, reply) => {
+  const { draft, signature, proposal } = req.body || {};
+  if (!draft || !signature || !proposal) {
+    return reply.code(400).send({ error: "missing_fields", needs: ["draft", "signature", "proposal"] });
+  }
+  const { id, title } = proposal;
+  if (!id || !title) return reply.code(400).send({ error: "missing_fields", needs: ["proposal.id", "proposal.title"] });
+  if (String(title).trim().length < 8) return reply.code(400).send({ error: "title_too_short" });
+  if (draft.proposalId !== id || draft.title !== title) {
+    return reply.code(400).send({ error: "draft_mismatch" });
+  }
+  if (Number(draft.deadline) * 1000 < Date.now()) {
+    return reply.code(400).send({ error: "signature_expired" });
+  }
+  let creator;
+  try { creator = getAddress(draft.creator); } catch { return reply.code(400).send({ error: "bad_creator_address" }); }
+  let valid;
+  try {
+    valid = await verifyTypedData({
+      address: creator,
+      domain: DOMAIN,
+      types: PROPOSAL_DRAFT_TYPES,
+      primaryType: "ProposalDraft",
+      message: {
+        creator,
+        proposalId: draft.proposalId,
+        title: draft.title,
+        nonce: BigInt(draft.nonce ?? 0),
+        deadline: BigInt(draft.deadline),
+      },
+      signature,
+    });
+  } catch (e) {
+    return reply.code(400).send({ error: "signature_verification_threw", detail: e.message });
+  }
+  if (!valid) return reply.code(401).send({ error: "invalid_signature" });
+
+  // Badge gate — drafts use the default eligibility token (community
+  // proposals are for the community the badge defines).
+  const spec = resolveEligibilitySpec({ tokenId: DEFAULT_ELIGIBILITY_TOKEN_ID });
+  const gate = await holdsBadgeOrAdmin(creator, spec);
+  if (!gate.ok) return reply.code(gate.code).send({ error: gate.error, detail: gate.detail });
+
+  const proposals = await loadProposals();
+  if (proposals[id]) return reply.code(409).send({ error: "proposal_id_taken" });
+  const creatorLc = creator.toLowerCase();
+  const liveDraft = Object.values(proposals).find(
+    (p) => p.status === "draft" && (p.createdBy || "").toLowerCase() === creatorLc);
+  if (liveDraft && !gate.admin) {
+    return reply.code(409).send({ error: "draft_limit", detail: `you already have a live draft (${liveDraft.id}); it must promote or be withdrawn first` });
+  }
+
+  const durationDays = Math.min(30, Math.max(1, Number(proposal.durationDays || 7)));
+  proposals[id] = {
+    id,
+    title: String(title).trim(),
+    description: String(proposal.description || ""),
+    votingMode: proposal.votingMode === "token" ? "token" : "quadratic",
+    budget: Number(proposal.budget || 100),
+    options: Array.isArray(proposal.options)
+      ? proposal.options.slice(0, 12).map((o, i) => ({ id: i + 1, label: String(o.label || o).slice(0, 120), body: String(o.body || ""), submittedBy: creator }))
+      : [],
+    // deadline is finalized at promotion (opensAt + durationDays); until
+    // then store a placeholder far out so shared date math never NaNs.
+    deadline: new Date(Date.now() + 365 * 86400000).toISOString(),
+    opensAt: null,
+    durationDays,
+    status: "draft",
+    supporters: [],
+    supportThreshold: DRAFT_SUPPORT_THRESHOLD,
+    tokenId: DEFAULT_ELIGIBILITY_TOKEN_ID,
+    tokenAddress: null,
+    tokenChainId: null,
+    createdAt: new Date().toISOString(),
+    createdBy: creator,
+  };
+  await saveProposals(proposals);
+  return { ok: true, proposal: publicProposalView(proposals[id]), supportThreshold: DRAFT_SUPPORT_THRESHOLD };
+});
+
+// Support a community draft. Body: { support, signature } where support
+// is the EIP-712 DraftSupport message. One support per badge holder;
+// the creator's own support doesn't count (outside interest required).
+// Hitting the threshold promotes the draft to a SCHEDULED official
+// vote: opens at the next voting cycle, closes durationDays later.
+app.post("/api/proposals/:id/support", async (req, reply) => {
+  const { support, signature } = req.body || {};
+  if (!support || !signature) return reply.code(400).send({ error: "missing_signed_support" });
+  if (support.proposalId !== req.params.id) return reply.code(400).send({ error: "proposal_id_mismatch" });
+  if (Number(support.deadline) * 1000 < Date.now()) return reply.code(400).send({ error: "signature_expired" });
+  let supporter;
+  try { supporter = getAddress(support.supporter); } catch { return reply.code(400).send({ error: "bad_supporter_address" }); }
+  let valid;
+  try {
+    valid = await verifyTypedData({
+      address: supporter,
+      domain: DOMAIN,
+      types: DRAFT_SUPPORT_TYPES,
+      primaryType: "DraftSupport",
+      message: {
+        supporter,
+        proposalId: support.proposalId,
+        nonce: BigInt(support.nonce ?? 0),
+        deadline: BigInt(support.deadline),
+      },
+      signature,
+    });
+  } catch (e) {
+    return reply.code(400).send({ error: "signature_verification_threw", detail: e.message });
+  }
+  if (!valid) return reply.code(401).send({ error: "invalid_signature" });
+
+  const proposals = await loadProposals();
+  const p = proposals[req.params.id];
+  if (!p) return reply.code(404).send({ error: "proposal_not_found" });
+  if (p.status !== "draft") return reply.code(400).send({ error: "not_a_draft" });
+  const supporterLc = supporter.toLowerCase();
+  if ((p.createdBy || "").toLowerCase() === supporterLc) {
+    return reply.code(400).send({ error: "creator_cannot_support_own_draft" });
+  }
+  if ((p.supporters || []).some((s) => s.address === supporterLc)) {
+    return reply.code(409).send({ error: "already_supported" });
+  }
+  const spec = resolveEligibilitySpec(p);
+  const gate = await holdsBadgeOrAdmin(supporter, spec);
+  if (!gate.ok) return reply.code(gate.code).send({ error: gate.error, detail: gate.detail });
+
+  p.supporters = [...(p.supporters || []), { address: supporterLc, signedAt: new Date().toISOString(), signature }];
+  let promoted = false;
+  if (p.supporters.length >= (p.supportThreshold || DRAFT_SUPPORT_THRESHOLD)) {
+    // PROMOTION: becomes a scheduled official vote at the next cycle.
+    p.status = "open";
+    p.opensAt = nextCycleStartIso();
+    p.deadline = new Date(new Date(p.opensAt).getTime() + (p.durationDays || 7) * 86400000).toISOString();
+    p.promotedAt = new Date().toISOString();
+    promoted = true;
+  }
+  proposals[req.params.id] = p;
+  await saveProposals(proposals);
+  return {
+    ok: true,
+    supporterCount: p.supporters.length,
+    supportThreshold: p.supportThreshold || DRAFT_SUPPORT_THRESHOLD,
+    promoted,
+    ...(promoted ? { opensAt: p.opensAt, deadline: p.deadline } : {}),
+  };
+});
+
 // Cast a vote. Body: { ballot, signature }. Validates everything; on
 // success replaces any prior ballot from the same voter.
 app.post("/api/proposals/:id/vote", async (req, reply) => {
@@ -946,6 +1156,8 @@ app.post("/api/proposals/:id/vote", async (req, reply) => {
   const proposals = await loadProposals();
   const proposal = proposals[req.params.id];
   if (!proposal) return reply.code(404).send({ error: "proposal_not_found" });
+  // Community drafts collect supporters, not ballots (promotion opens voting).
+  if (proposal.status === "draft") return reply.code(400).send({ error: "draft_not_votable", supportThreshold: proposal.supportThreshold });
   const deadlineMs = new Date(proposal.deadline).getTime();
   if (Number.isNaN(deadlineMs)) return reply.code(500).send({ error: "bad_proposal_deadline" });
   if (Date.now() > deadlineMs) return reply.code(400).send({ error: "voting_closed" });

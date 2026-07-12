@@ -128,3 +128,53 @@ export async function makeSubmission(
   const signature = await account.signTypedData({ domain: DOMAIN, types: ISSUE_SUBMISSION_TYPES, primaryType: "IssueSubmission", message });
   return { submission: { submitter: account.address, proposalId: opts.proposalId, label: opts.label, body, nonce, deadline }, signature };
 }
+
+// ── Permissionless proposals (drafts + support) ─────────────────────
+const PROPOSAL_DRAFT_TYPES = {
+  ProposalDraft: [
+    { name: "creator", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "title", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+const DRAFT_SUPPORT_TYPES = {
+  DraftSupport: [
+    { name: "supporter", type: "address" },
+    { name: "proposalId", type: "string" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
+
+// Returns the { draft, signature } half of POST /api/proposals/draft.
+export async function makeDraft(
+  account: Account,
+  opts: { proposalId: string; title: string; nonce?: number; deadline?: number },
+) {
+  const deadline = opts.deadline ?? futureDeadline();
+  const nonce = opts.nonce ?? 0;
+  const message = {
+    creator: account.address, proposalId: opts.proposalId, title: opts.title,
+    nonce: BigInt(nonce), deadline: BigInt(deadline),
+  };
+  const signature = await account.signTypedData({ domain: DOMAIN, types: PROPOSAL_DRAFT_TYPES, primaryType: "ProposalDraft", message });
+  return { draft: { creator: account.address, proposalId: opts.proposalId, title: opts.title, nonce, deadline }, signature };
+}
+
+// Returns the { support, signature } body of POST /api/proposals/:id/support.
+export async function makeSupport(
+  account: Account,
+  opts: { proposalId: string; nonce?: number; deadline?: number },
+) {
+  const deadline = opts.deadline ?? futureDeadline();
+  const nonce = opts.nonce ?? 0;
+  const message = {
+    supporter: account.address, proposalId: opts.proposalId,
+    nonce: BigInt(nonce), deadline: BigInt(deadline),
+  };
+  const signature = await account.signTypedData({ domain: DOMAIN, types: DRAFT_SUPPORT_TYPES, primaryType: "DraftSupport", message });
+  return { support: { supporter: account.address, proposalId: opts.proposalId, nonce, deadline }, signature };
+}
