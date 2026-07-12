@@ -1980,9 +1980,6 @@ function _LiveHolders({ token }) {
     const [_deletingPending, _setDeletingPending] = useState(false);
     const [_committing, _setCommitting] = useState(false);
     const [_userBallot, _setUserBallot] = useState(null);
-    // _editingVote kept (unused) so legacy references won't crash if some
-    // path still references it; the dirty-state flow replaced it.
-    const [_editingVote, _setEditingVote] = useState(false); // eslint-disable-line @typescript-eslint/no-unused-vars
     const [_roundTally, _setRoundTally] = useState({});
     const [_roundVoters, _setRoundVoters] = useState(0);
     const [_deletedOptionIds, _setDeletedOptionIds] = useState([]);
@@ -2102,12 +2099,6 @@ function _LiveHolders({ token }) {
         setAllocations({});
       }
     }, [round?.id]);
-    const _votedAndLocked = !!_userBallot && !_editingVote;
-    const _cancelEdit = () => {
-      _setEditingVote(false);
-      // Restore sliders to the saved ballot (discard unsaved changes).
-      _hydrateAllocs(_userBallot);
-    };
     // Cost (in credits) of any signed-ballot allocations pointing at an
     // issue that's been deleted since the user voted. These are
     // "stranded" points the user can reallocate by re-signing.
@@ -3368,9 +3359,6 @@ function _LiveHolders({ token }) {
       });
     };
 
-    const setDefault = (id) => {
-      setTokens(prev => prev.map(t => ({ ...t, isDefault: t.id === id })));
-    };
     const removeToken = (id) => {
       const remaining = tokens.filter(t => t.id !== id);
       const removedDefault = tokens.find(t => t.id === id)?.isDefault;
@@ -3720,6 +3708,9 @@ function _LiveHolders({ token }) {
   // ── Round editor (create / edit) ─────────────────────────────────
   function F2RoundEditor({ initial, tokens, setTokens, onSave, onCancel }) {
     const [showErrors, setShowErrors] = useState(false);
+    // Publish must route through this guard — the button once called onSave
+    // directly, letting a titleless/tokenless round publish and leaving the
+    // showErrors styling unreachable.
     const tryPublish = (status) => {
       if (!r.title || !r.title.trim() || !r.tokenId) {
         setShowErrors(true);
@@ -3764,8 +3755,6 @@ function _LiveHolders({ token }) {
       const next = _addDaysUtc(r.opens, days);
       if (next && next !== r.closes) setR(prev => ({ ...prev, closes: next }));
     }, [closeMode, r.opens, r.rolling]);
-    const selectedToken = tokens.find(t => t.id === r.tokenId);
-
     return (
       <div style={{ padding: "32px 40px", maxWidth: 880, margin: "0 auto" }}>
         <a onClick={onCancel} className="font-mono" style={{ fontSize: 11, color: "var(--text-secondary)", letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer" }}>← Admin</a>
@@ -3875,7 +3864,7 @@ function _LiveHolders({ token }) {
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button className="btn btn-secondary" onClick={onCancel}>Cancel</button>
-              <button className="btn btn-primary btn-lg" onClick={() => onSave({ ...r, status: "open" })}>{
+              <button className="btn btn-primary btn-lg" onClick={() => tryPublish("open")}>{
                 (!r.rolling && _utcMs(r.opens) > Date.now())
                   ? (isNew ? "Schedule murmuration →" : "Save & schedule →")
                   : (isNew ? "Publish murmuration →" : "Save & publish →")
