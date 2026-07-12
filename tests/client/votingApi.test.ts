@@ -124,3 +124,47 @@ describe("write endpoints (sign + submit)", () => {
     await expect(api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 99 }])).rejects.toThrow("castVote 400: over_budget");
   });
 });
+
+describe("community drafts", () => {
+  it("createDraft signs a ProposalDraft and POSTs draft + proposal", async () => {
+    mockFetch(() => okJson({ ok: true, proposal: { id: "r-d1", status: "draft" }, supportThreshold: 3 }));
+    const input = { id: "r-d1", title: "A community idea", options: [{ label: "Yes" }], durationDays: 7 };
+    const r = await api.createDraft(input, wallet, ACTOR);
+    expect(r.supportThreshold).toBe(3);
+    expect(calls[0].url).toBe("/api/proposals/draft");
+    const signArgs = wallet.signTypedData.mock.calls[0][0];
+    expect(signArgs.primaryType).toBe("ProposalDraft");
+    expect(signArgs.message.creator).toBe(ACTOR);
+    expect(signArgs.message.proposalId).toBe("r-d1");
+    expect(signArgs.message.title).toBe("A community idea");
+    const body = JSON.parse(calls[0].init.body);
+    expect(body.signature).toBe("0xsignature");
+    expect(body.draft.creator).toBe(ACTOR);
+    expect(body.proposal).toEqual(input);
+    // nonce/deadline in the POST body must match what was signed
+    expect(BigInt(body.draft.nonce)).toBe(signArgs.message.nonce);
+    expect(BigInt(body.draft.deadline)).toBe(signArgs.message.deadline);
+  });
+  it("createDraft surfaces the server error code", async () => {
+    mockFetch(() => errJson(409, { error: "draft_limit" }));
+    await expect(api.createDraft({ id: "r-d2", title: "Another idea!" }, wallet, ACTOR))
+      .rejects.toThrow("createDraft: 409 draft_limit");
+  });
+  it("supportDraft signs a DraftSupport and POSTs to the support route", async () => {
+    mockFetch(() => okJson({ ok: true, supporterCount: 2, supportThreshold: 3, promoted: false }));
+    const r = await api.supportDraft("r-d1", wallet, ACTOR);
+    expect(r.promoted).toBe(false);
+    expect(calls[0].url).toBe("/api/proposals/r-d1/support");
+    const signArgs = wallet.signTypedData.mock.calls[0][0];
+    expect(signArgs.primaryType).toBe("DraftSupport");
+    expect(signArgs.message.supporter).toBe(ACTOR);
+    const body = JSON.parse(calls[0].init.body);
+    expect(BigInt(body.support.nonce)).toBe(signArgs.message.nonce);
+    expect(BigInt(body.support.deadline)).toBe(signArgs.message.deadline);
+  });
+  it("supportDraft URL-encodes the proposal id and surfaces errors", async () => {
+    mockFetch(() => errJson(400, { error: "already_supported" }));
+    await expect(api.supportDraft("r/d?1", wallet, ACTOR)).rejects.toThrow("supportDraft: 400 already_supported");
+    expect(calls[0].url).toBe("/api/proposals/r%2Fd%3F1/support");
+  });
+});
