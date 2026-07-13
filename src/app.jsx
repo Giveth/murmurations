@@ -1482,11 +1482,8 @@ function _LiveHolders({ token }) {
             </div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
-            {isBadgeholder && !canAdmin(role) && (
-              <button className="btn btn-secondary f2-hide-sm" style={{ padding: "12px 22px" }} onClick={onPropose}>✍ Propose a murmuration</button>
-            )}
-            {canAdmin(role) && (
-              <button className="btn btn-secondary f2-hide-sm" style={{ padding: "12px 22px" }} onClick={onPropose}>✍ Propose (community)</button>
+            {(isBadgeholder || canAdmin(role)) && (
+              <button className="btn btn-primary f2-hide-sm" style={{ padding: "12px 22px" }} onClick={onPropose}>✍ Propose a vote</button>
             )}
             {canAdmin(role) && (
               <button className="btn btn-primary btn-lg f2-hide-sm" onClick={onCreate}>+ New vote</button>
@@ -2938,7 +2935,11 @@ function _LiveHolders({ token }) {
     return (
       <div className="f2-pad" style={{ padding: "40px 40px 80px", maxWidth: 680, margin: "0 auto" }}>
         <BackButton onBack={onBack} />
-        <div className="font-display" style={{ fontSize: 34, fontWeight: 700, color: "var(--text-primary)", marginTop: 18 }}>Propose a murmuration</div>
+        {/* Solid card so the floating-Ð background can't bleed through the
+            labels (same lesson as the add-direction button: opaque fill,
+            not translucency, over the busy backdrop). */}
+        <div style={{ marginTop: 18, background: "var(--surface-card)", border: "1px solid var(--stroke-line-2)", borderRadius: 16, padding: "28px 26px" }}>
+        <div className="font-display" style={{ fontSize: 34, fontWeight: 700, color: "var(--text-primary)" }}>Propose a vote</div>
         <div className="font-body" style={{ fontSize: 14, color: "var(--text-muted)", marginTop: 8, lineHeight: 1.6 }}>
           Any badge holder can propose. Your draft goes live for the community, and once enough badge holders support it, it becomes an official vote scheduled for the next voting cycle. One live draft per person.
         </div>
@@ -2969,12 +2970,15 @@ function _LiveHolders({ token }) {
             </div>
           </div>
           {err && <div className="font-body" style={{ fontSize: 13, color: "var(--dao-red)" }}>{err}</div>}
-          <button className="btn btn-primary btn-lg" disabled={!canGo || busy} style={{ opacity: canGo ? 1 : 0.5 }} onClick={submit}>
+          <button className="btn btn-primary btn-lg" disabled={!canGo || busy}
+            style={canGo ? undefined : { background: "rgb(62,103,135)", borderColor: "rgba(255,255,255,0.18)", color: "rgba(255,255,255,0.55)" }}
+            onClick={submit}>
             {busy ? "Signing…" : (address ? "✍ Sign + publish draft" : "Connect to propose")}
           </button>
           <div className="font-body" style={{ fontSize: 12, color: "var(--text-faint)" }}>
             Publishing signs a gas-free message proving you hold the badge. No funds move.
           </div>
+        </div>
         </div>
       </div>
     );
