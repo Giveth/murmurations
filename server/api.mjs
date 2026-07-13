@@ -396,7 +396,7 @@ const DRAFT_SUPPORT_TYPES = {
     { name: "deadline", type: "uint256" },
   ],
 };
-const DRAFT_SUPPORT_THRESHOLD = Math.max(1, Number(process.env.DRAFT_SUPPORT_THRESHOLD || 3));
+const DRAFT_SUPPORT_THRESHOLD = Math.max(1, Number(process.env.DRAFT_SUPPORT_THRESHOLD || 10));
 // Next cycle start: the coming Monday 12:00 UTC (at least 12h out, so a
 // draft promoted just before the cycle still gets an announcement gap).
 function nextCycleStartIso(now = Date.now()) {
@@ -1039,7 +1039,8 @@ app.post("/api/proposals/draft", async (req, reply) => {
     return reply.code(409).send({ error: "draft_limit", detail: `you already have a live draft (${liveDraft.id}); it must promote or be withdrawn first` });
   }
 
-  const durationDays = Math.min(30, Math.max(1, Number(proposal.durationDays || 7)));
+  // Cap matches the admin editor's largest preset (2 months).
+  const durationDays = Math.min(60, Math.max(1, Number(proposal.durationDays || 7)));
   proposals[id] = {
     id,
     title: String(title).trim(),

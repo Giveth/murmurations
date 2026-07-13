@@ -2896,12 +2896,12 @@ function _LiveHolders({ token }) {
     const { data: _walletClient } = wagmi.useWalletClient();
     const [title, setTitle] = useState("");
     const [blurb, setBlurb] = useState("");
-    const [opts, setOpts] = useState(["", ""]);
+    const [opts, setOpts] = useState([{ label: "", body: "" }, { label: "", body: "" }]);
     const [days, setDays] = useState(7);
     const [busy, setBusy] = useState(false);
     const [err, setErr] = useState(null);
     const [created, setCreated] = useState(null);
-    const canGo = title.trim().length >= 8 && opts.filter(o => o.trim()).length >= 2;
+    const canGo = title.trim().length >= 8 && opts.filter(o => o.label.trim()).length >= 2;
     async function submit() {
       if (!_walletClient || !address) { onConnectClick?.(); return; }
       setBusy(true); setErr(null);
@@ -2909,7 +2909,7 @@ function _LiveHolders({ token }) {
         const id = "r-" + Date.now().toString(36);
         const res = await votingApi.createDraft({
           id, title: title.trim(), description: blurb.trim(),
-          options: opts.filter(o => o.trim()).map(label => ({ label: label.trim() })),
+          options: opts.filter(o => o.label.trim()).map(o => ({ label: o.label.trim(), body: o.body.trim() })),
           durationDays: days,
         }, _walletClient, address);
         setCreated(res);
@@ -2955,17 +2955,20 @@ function _LiveHolders({ token }) {
           <div>
             <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Directions (at least 2 · voters can add more once live)</div>
             {opts.map((o, i) => (
-              <input key={i} style={{ ..._inp, marginBottom: 8 }} value={o} maxLength={120} placeholder={`Direction ${i + 1}`} onChange={e => setOpts(opts.map((x, j) => j === i ? e.target.value : x))} />
+              <div key={i} style={{ marginBottom: 12 }}>
+                <input style={_inp} value={o.label} maxLength={120} placeholder={`Direction ${i + 1}`} onChange={e => setOpts(opts.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} />
+                <textarea style={{ ..._inp, marginTop: 6, minHeight: 48, resize: "vertical", fontSize: 13 }} value={o.body} maxLength={600} placeholder="Description (optional)" onChange={e => setOpts(opts.map((x, j) => j === i ? { ...x, body: e.target.value } : x))} />
+              </div>
             ))}
             {opts.length < 8 && (
-              <button className="btn btn-secondary" style={{ padding: "8px 16px", fontSize: 13 }} onClick={() => setOpts([...opts, ""])}>+ Another direction</button>
+              <button className="btn btn-secondary" style={{ padding: "8px 16px", fontSize: 13 }} onClick={() => setOpts([...opts, { label: "", body: "" }])}>+ Another direction</button>
             )}
           </div>
           <div>
             <div className="font-mono" style={{ fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-muted)", marginBottom: 6 }}>Voting window once live</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              {[3, 7, 14].map(d => (
-                <button key={d} className="btn btn-secondary" style={{ padding: "9px 18px", fontSize: 13, ...(days === d ? { background: "var(--dao-red)", borderColor: "var(--dao-red)", color: "#fff" } : {}) }} onClick={() => setDays(d)}>{d} days</button>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[[7, "1 week"], [14, "2 weeks"], [21, "3 weeks"], [30, "1 month"], [60, "2 months"]].map(([d, label]) => (
+                <button key={d} className="btn btn-secondary" style={{ padding: "9px 18px", fontSize: 13, ...(days === d ? { background: "var(--dao-red)", borderColor: "var(--dao-red)", color: "#fff" } : {}) }} onClick={() => setDays(d)}>{label}</button>
               ))}
             </div>
           </div>

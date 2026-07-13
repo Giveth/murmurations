@@ -1,4 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Pin the threshold before api.mjs loads (module-scope constant) so the
+// promotion test's Monday-schedule assertions always execute regardless of
+// the production default (10 as of 2026-07-13, per Zep).
+vi.hoisted(() => { process.env.DRAFT_SUPPORT_THRESHOLD = "3"; });
 import { makeDraft, makeSupport, makeBallot, voterAccount, strangerAccount, adminAccount, pastDeadline } from "../helpers";
 
 vi.mock("../../server/db.mjs", () => {
