@@ -1422,7 +1422,7 @@ function _LiveHolders({ token }) {
           <div className="f2-hero-body" style={{ position: "absolute", inset: 40, display: "flex", flexDirection: "column", justifyContent: "space-between", color: "white", zIndex: 2 }}>
             <div className="f2-wordmark-sm"><Wordmark light size={68} /></div>
             <div>
-              <div className="font-mono" style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dao-gold-300)", marginBottom: 14, padding: "10px 18px", textShadow: "0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.65)", position: "relative", zIndex: 2 }}>Murmuration ·{"  "}theDAO's DAO</div>
+              <div className="font-mono" style={{ fontSize: 12, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dao-gold-300)", marginBottom: 14, padding: "10px 18px", textShadow: "0 1px 2px rgba(0,0,0,0.95), 0 0 8px rgba(0,0,0,0.9), 0 0 18px rgba(0,0,0,0.65)", position: "relative", zIndex: 2 }}>Murmuration ·{"  "}TheDAO's DAO</div>
               <div className="font-display" style={{ fontSize: "clamp(36px, 7vw, 60px)", fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.05, color: "white" }}>
                 200 experts.<br/>Murmuring<br/><span style={{ color: "var(--dao-gold-300)" }}>To one direction</span>
               </div>
@@ -2074,31 +2074,11 @@ function _LiveHolders({ token }) {
     // when an admin deletes an issue you voted on, the refund banner
     // appears immediately without a manual reload.
     useEffect(() => { _refreshState(); }, [round?.id, address, (round?.issueIds || []).length]);
-    // Wallet switch / disconnect resets the local allocation scratchpad so a
-    // newly-connected (or round-ineligible) address never inherits the
-    // previous wallet's phantom votes. _refreshState (keyed on address too)
-    // re-hydrates from the new address's signed ballot if one exists.
-    // (Griff, 2026-06-23: votes show 0 until someone actually votes.)
-    const _prevAddrRef = useRef(address);
-    useEffect(() => {
-      if (_prevAddrRef.current !== address) {
-        _prevAddrRef.current = address;
-        setAllocations({});
-      }
-    }, [address]);
-    // Same scratchpad reset when the ROUND changes. Option ids are per-round
-    // (1,2,3…) and COLLIDE across rounds, so without this the previous round's
-    // allocations bleed onto this one — e.g. world-cup votes (20 pts) showing
-    // against the satoshi round's options + budget as "20 / 5 used" (Griff,
-    // 2026-06-24). _refreshState (keyed on round.id) then re-hydrates the
-    // sliders from THIS round's own signed ballot, if any.
-    const _prevRoundRef = useRef(round?.id);
-    useEffect(() => {
-      if (_prevRoundRef.current !== round?.id) {
-        _prevRoundRef.current = round?.id;
-        setAllocations({});
-      }
-    }, [round?.id]);
+    // NOTE: the allocation-scratchpad resets (wallet switch, round switch)
+    // live in F2App next to the state itself — a useRef comparison here
+    // never fires on the unmount/remount path (round A → votes list →
+    // round B), which leaked one round's draft sliders onto another
+    // round's same-id options (Griff, 2026-07-15).
     // Cost (in credits) of any signed-ballot allocations pointing at an
     // issue that's been deleted since the user voted. These are
     // "stranded" points the user can reallocate by re-signing.
@@ -3981,6 +3961,29 @@ function _LiveHolders({ token }) {
     // Start with a clean ballot — the prototype shouldn't surprise the
     // user with phantom allocations when they land on a round.
     const [allocations, setAllocations] = useState({});
+    // The scratchpad is keyed by BARE option id, which collides across
+    // rounds (every round numbers its options 1, 2, 3…). The resets MUST
+    // live here, next to the state: ref-based resets inside F2RoundDetail
+    // miss the unmount/remount path (round A → votes list → round B), which
+    // leaked one round's draft sliders onto another round's new options
+    // (Griff, 2026-07-15; earlier hits 2026-06-23/24). Same-round list
+    // round-trips keep the draft; F2RoundDetail re-hydrates signed ballots.
+    const _allocOwnerRef = useRef(null);
+    useEffect(() => {
+      if (currentRound && _allocOwnerRef.current !== currentRound) {
+        _allocOwnerRef.current = currentRound;
+        setAllocations({});
+      }
+    }, [currentRound]);
+    // Wallet switch / disconnect: a newly-connected address must never
+    // inherit the previous wallet's draft (Griff, 2026-06-23).
+    const _allocAddrRef = useRef(address);
+    useEffect(() => {
+      if (_allocAddrRef.current !== address) {
+        _allocAddrRef.current = address;
+        setAllocations({});
+      }
+    }, [address]);
 
     // Token / NFT eligibility registry — admin-managed. Each entry is a
     // contract whose holders can vote in a round. The first entry is the
