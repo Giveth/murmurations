@@ -138,7 +138,7 @@ const BADGEHOLDERS = [
 
 // ── Common UI primitives ────────────────────────────────────────────
 
-// Real theDAO logomark — red rounded square with white "Đ" (D-with-bar).
+// Real TheDAO logomark — red rounded square with white "Đ" (D-with-bar).
 // Geometry mirrors /Export/Logomark from the Figma: 30% padding, the bar
 // runs left-of-D and is overlapped by the D's vertical stem.
 // Convert a wallet / viem error into a SAFE, user-facing message. A user
@@ -263,7 +263,7 @@ function ShieldGlyph({ withShadow = true }) {
     <img
       className="shield"
       src="assets/badge-shield.png"
-      alt="Ethereum Security Badge"
+      alt="ETHSecurity Badge"
       style={{
         width: "78%",
         height: "auto",
@@ -339,7 +339,7 @@ function BadgeMedallion({ size = 320, rings = true }) {
   );
 }
 
-// Square-pattern backdrop matching theDAO brand image — soft translucent rounded squares
+// Square-pattern backdrop matching TheDAO brand image — soft translucent rounded squares
 function SquaresBackdrop({ density = 14, opacity = 1, tint = "light", withDaoMark = false, redEvery = 0, redOnly = false }) {
   const squares = [];
   for (let i = 0; i < density; i++) {
@@ -439,7 +439,7 @@ function SevTag({ s }) {
   );
 }
 
-// theDAO branded backdrop — deep blue radial with floating squares (matches brand image)
+// TheDAO branded backdrop — deep blue radial with floating squares (matches brand image)
 function CuratorBackdrop() {
   return (
     <div style={{
@@ -734,7 +734,7 @@ function _LiveHolders({ token }) {
   // gates are driven by `role`.
   const ROLE_LABEL = {
     visitor:    "Visitor",
-    badgeholder:"Badge holder",
+    badgeholder:"Badgeholder",
     admin:      "Admin",
   };
 
@@ -1118,7 +1118,7 @@ function _LiveHolders({ token }) {
       ? "rgba(255,255,255,0.55)"
       : role === "admin" ? "var(--dao-red)" : "rgb(245, 210, 110)";
     const displayId = isIncog ? "INCOGNITO" : "PFP #" + String(idx).padStart(4, "0");
-    const displayRole = isIncog ? "Anonymous badge holder" : role === "admin" ? "Admin" : "Badge holder";
+    const displayRole = isIncog ? "Anonymous badgeholder" : role === "admin" ? "Admin" : "Badgeholder";
     return (
       <>
         <button
@@ -2956,7 +2956,7 @@ function _LiveHolders({ token }) {
         {_backLink && <div style={{ marginBottom: 16 }}>{_backLink}</div>}
         <div className="font-display" style={{ fontSize: 44, fontWeight: 700, color: "var(--text-primary)", letterSpacing: "-0.02em" }}>Propose a new option</div>
         <div className="font-body" style={{ fontSize: 15, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.6 }}>
-          What should theDAO weigh in on? Drop it here, sign and it lands on the murmuration.
+          What should TheDAO weigh in on? Drop it here, sign and it lands on the murmuration.
         </div>
 
         {/* mode toggle — gated on IMPORT_FROM_GITHUB_ENABLED. The
