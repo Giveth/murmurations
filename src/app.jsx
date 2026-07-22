@@ -3917,7 +3917,10 @@ function _LiveHolders({ token }) {
               closes: p.deadline,
               rolling: false,
               status: closesMs > Date.now() ? "open" : "closed",
-              voters: 0,
+              // Live ballot count from the list endpoint. Hardcoding 0 here
+              // made every index card read "0 voted" regardless of the real
+              // vote count (Griff, 2026-07-22).
+              voters: Number(p.voters) || 0,
               issueIds: (p.options || []).map((o) => o.id),
               // Per-round id→label map. Views that render a STORED ballot
               // (My murmur / F2Ballot) must resolve names from THIS round, not

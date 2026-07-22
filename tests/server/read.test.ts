@@ -49,6 +49,38 @@ describe("GET /api/proposals (list)", () => {
     expect(p.options[0].id).toBe(1);
     expect(p.deletedOptionIds).toEqual([2]);
   });
+
+  // The index cards render `${r.voters} voted`. The list endpoint used to
+  // omit any count entirely, so every card read "0 voted" no matter how many
+  // ballots existed (Griff, 2026-07-22). Count must match the detail
+  // endpoint's voterCount: one per distinct voter who submitted a ballot.
+  it("reports the real voter count per proposal", async () => {
+    (db as any).__seedProposals({ [PID]: proposal() });
+    (db as any).__seedBallots({
+      [PID]: {
+        "0xaaa": ballot("0xaaa", [{ issueId: 1, points: 3 }]),
+        "0xbbb": ballot("0xbbb", [{ issueId: 2, points: 5 }]),
+      },
+    });
+    const res = await app.inject({ method: "GET", url: "/api/proposals" });
+    const [p] = res.json().proposals;
+    expect(p.voters).toBe(2);
+  });
+
+  it("reports zero voters when a proposal has no ballots", async () => {
+    (db as any).__seedProposals({ [PID]: proposal() });
+    const res = await app.inject({ method: "GET", url: "/api/proposals" });
+    expect(res.json().proposals[0].voters).toBe(0);
+  });
+
+  // A stale `voters` persisted on the record (the client used to send
+  // voters: 0 at creation) must never win over the live ballot count.
+  it("overrides a stale persisted voters field", async () => {
+    (db as any).__seedProposals({ [PID]: proposal({ voters: 0 }) });
+    (db as any).__seedBallots({ [PID]: { "0xaaa": ballot("0xaaa", [{ issueId: 1, points: 1 }]) } });
+    const res = await app.inject({ method: "GET", url: "/api/proposals" });
+    expect(res.json().proposals[0].voters).toBe(1);
+  });
 });
 
 describe("GET /api/proposals/:id (tally)", () => {

@@ -562,9 +562,20 @@ function publicProposalView(p) {
 }
 
 // List proposals (lightweight — for the dashboard)
+// Carries `voters`, the live ballot count, because the index cards render
+// it. Counted the same way as GET /:id's voterCount (one per distinct
+// voter) so the two views can never disagree, and set AFTER the spread so a
+// stale persisted `voters` on the record can't win over reality. Until
+// 2026-07-22 no count was sent at all and every card read "0 voted".
 app.get("/api/proposals", async () => {
   const proposals = await loadProposals();
-  return { proposals: Object.values(proposals).map(publicProposalView) };
+  const ballots = await loadBallots();
+  return {
+    proposals: Object.values(proposals).map((p) => ({
+      ...publicProposalView(p),
+      voters: Object.keys(ballots[p.id] || {}).length,
+    })),
+  };
 });
 
 // Read one proposal, with the live tally derived from current ballots.
