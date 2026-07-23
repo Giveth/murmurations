@@ -153,6 +153,11 @@ function safeWalletErr(e, verb = "complete that") {
   const isReject = (e && e.name === "UserRejectedRequestError")
     || /user rejected|user denied|rejected the request|request rejected|\b4001\b/i.test(raw);
   if (isReject) return "Signing cancelled.";
+  // Wrong-chain: our own WRONG_CHAIN sentinel (votingApi.ensureSigningChain),
+  // or the wallet's native "must match the active chainId" refusal when the
+  // switch was skipped/unsupported. Common on MetaMask mobile via WalletConnect.
+  const isWrongChain = /WRONG_CHAIN|must match the active chain|chain(?:id)? mismatch|provided chainid .* must match|switch.*(?:chain|network)|unsupported chain/i.test(raw);
+  if (isWrongChain) return "Switch your wallet to Ethereum mainnet, then try again.";
   return `Couldn't ${verb}. Please try again.`;
 }
 

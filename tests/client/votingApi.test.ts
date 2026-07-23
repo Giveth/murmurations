@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import * as api from "../../src/votingApi";
 
 const ACTOR = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" as `0x${string}`;
-const wallet: any = { signTypedData: vi.fn(async () => "0xsignature" as `0x${string}`) };
+// Wallet already on mainnet (chainId 1) — the common desktop case; the chain
+// guard is a no-op here so these mirror pre-fix behaviour.
+const wallet: any = {
+  signTypedData: vi.fn(async () => "0xsignature" as `0x${string}`),
+  getChainId: vi.fn(async () => 1),
+  switchChain: vi.fn(async () => {}),
+};
 
 let calls: { url: string; init?: any }[] = [];
 function mockFetch(responder: (url: string, init?: any) => any) {
@@ -17,7 +23,11 @@ const errJson = (status: number, body: any = {}) => ({ ok: false, status, json: 
 
 const proposal: any = { id: "r-1", title: "T", votingMode: "quadratic", budget: 100, options: [{ id: 1, label: "A" }], deadline: new Date(Date.now() + 86400000).toISOString() };
 
-beforeEach(() => { wallet.signTypedData.mockClear(); });
+beforeEach(() => {
+  wallet.signTypedData.mockClear();
+  wallet.getChainId.mockClear().mockResolvedValue(1);
+  wallet.switchChain.mockClear().mockResolvedValue(undefined);
+});
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("read endpoints", () => {
@@ -122,5 +132,41 @@ describe("write endpoints (sign + submit)", () => {
   it("castVote throws with the server error code", async () => {
     mockFetch(() => errJson(400, { error: "over_budget" }));
     await expect(api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 99 }])).rejects.toThrow("castVote 400: over_budget");
+  });
+
+  // Chain guard (MetaMask-mobile fix): the EIP-712 domain is pinned to mainnet,
+  // so the wallet must be on chainId 1 before signing.
+  it("castVote on the wrong chain switches to mainnet, then signs", async () => {
+    // on Arbitrum first, on mainnet after the switch
+    wallet.getChainId.mockResolvedValueOnce(42161).mockResolvedValueOnce(1);
+    mockFetch(() => okJson({ ok: true, voter: ACTOR }));
+    const r = await api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 5 }]);
+    expect(wallet.switchChain).toHaveBeenCalledWith({ id: 1 });
+    expect(wallet.signTypedData).toHaveBeenCalledOnce();
+    expect(r.ok).toBe(true);
+  });
+
+  it("castVote never switches when already on mainnet", async () => {
+    wallet.getChainId.mockResolvedValue(1);
+    mockFetch(() => okJson({ ok: true, voter: ACTOR }));
+    await api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 5 }]);
+    expect(wallet.switchChain).not.toHaveBeenCalled();
+  });
+
+  it("castVote refuses (no signature) when the wallet won't switch", async () => {
+    wallet.getChainId.mockResolvedValue(42161);
+    wallet.switchChain.mockRejectedValue(new Error("unsupported"));
+    mockFetch(() => okJson({ ok: true, voter: ACTOR }));
+    await expect(api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 5 }])).rejects.toThrow(/mainnet/i);
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
+  });
+
+  it("castVote refuses when the switch silently doesn't change chains", async () => {
+    // wallet ACKs switchChain but stays on Arbitrum (mobile quirk)
+    wallet.getChainId.mockResolvedValue(42161);
+    wallet.switchChain.mockResolvedValue(undefined);
+    mockFetch(() => okJson({ ok: true, voter: ACTOR }));
+    await expect(api.castVote(wallet, ACTOR, proposal, [{ issueId: 1, points: 5 }])).rejects.toThrow(/mainnet/i);
+    expect(wallet.signTypedData).not.toHaveBeenCalled();
   });
 });
