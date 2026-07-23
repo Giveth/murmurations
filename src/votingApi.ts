@@ -313,12 +313,49 @@ export async function createProposal(
  * Sign + submit a ballot. Throws on validation failures (over-budget,
  * not a badgeholder, etc.) — caller renders the error.
  */
+// MetaMask (and most wallets) refuse to sign EIP-712 typed data whose
+// domain.chainId doesn't match the wallet's ACTIVE chain — it throws
+// "provided chainId 1 must match the active chainId X". Our DOMAIN is pinned
+// to mainnet (chainId 1). On desktop the wallet is usually already on mainnet
+// so this is invisible, but MetaMask MOBILE over WalletConnect keeps whatever
+// chain the user had open, so signing silently failed there ("Couldn't sign
+// the ballot"). Put the wallet on mainnet before signing. This changes ONLY
+// the active network, never the signed payload or the domain, so every ballot
+// already cast still verifies bit-for-bit identically. Throws WRONG_CHAIN
+// (surfaced as a "switch to mainnet" message) if the wallet won't switch.
+async function ensureSigningChain(walletClient: WalletClient): Promise<void> {
+  let active: number;
+  try {
+    active = await walletClient.getChainId();
+  } catch {
+    return; // can't read the chain; let the sign attempt surface the real error
+  }
+  if (active === mainnet.id) return;
+  try {
+    await walletClient.switchChain({ id: mainnet.id });
+  } catch {
+    throw new Error("WRONG_CHAIN: switch your wallet to Ethereum mainnet to vote.");
+  }
+  // Some mobile wallets ACK the switch but don't actually change chains —
+  // re-read and refuse rather than produce a signature the wallet will reject.
+  let after: number;
+  try {
+    after = await walletClient.getChainId();
+  } catch {
+    after = active;
+  }
+  if (after !== mainnet.id) {
+    throw new Error("WRONG_CHAIN: switch your wallet to Ethereum mainnet to vote.");
+  }
+}
+
 export async function castVote(
   walletClient: WalletClient,
   voter: `0x${string}`,
   proposal: Proposal,
   allocations: Allocation[],
 ): Promise<{ ok: true; voter: `0x${string}` }> {
+  await ensureSigningChain(walletClient);
   const deadlineSec = Math.floor(new Date(proposal.deadline).getTime() / 1000);
   const ballot: Ballot = {
     voter,
